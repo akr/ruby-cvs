@@ -3,10 +3,11 @@ require 'delegate'
 
 class CVS
   class R < CVS # remote repository
-    def initialize(cvsroot)
+    def initialize(cvsroot, readonly=false)
       @cvsroot = cvsroot
+      @readonly = readonly
     end
-    attr_accessor :cvsroot
+    attr_accessor :cvsroot, :readonly
 
     def top_dir
       return D.new(self, nil, '.')

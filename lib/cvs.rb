@@ -3,7 +3,6 @@
 
 
 == Example
-
   require 'cvs'
 
   # needs read permission only:
@@ -41,7 +40,7 @@ Abstract CVS repository class.
 =end
 class CVS
 =begin
---- CVS.create(arg)
+--- CVS.create(arg[, readonly])
     CVS.create is an intelligent factory method for CVS objects.
      cvsroot//                  => CVS repository object.
      cvsroot//dir               => CVS directory object.
@@ -70,27 +69,30 @@ class CVS
      file = ['Attic/'] name
      name = <filename>
      ambiguous_arg = '/' path
+
+    If `readonly' is true, only write operations are forbidden and locking is
+    disabled.
 =end
-  def self.create(arg)
+  def self.create(arg, readonly=false)
     if /\/\// =~ arg
       cvsroot = $`
       rest = $'
       c = /\A\// =~ arg ? L : R
-      return c.new(cvsroot) if rest == ''
+      return c.new(cvsroot, readonly) if rest == ''
       if /\/\// =~ rest
         path = $`
         file = $'
-        return c.new(cvsroot).dir(path) if file == ''
+        return c.new(cvsroot, readonly).dir(path) if file == ''
         attic = file.sub!(/\AAttic\//, '') != nil
-        return c.new(cvsroot).dir(path).file(file, attic)
+        return c.new(cvsroot, readonly).dir(path).file(file, attic)
       else
-        return c.new(cvsroot).dir(rest)
+        return c.new(cvsroot, readonly).dir(rest)
       end
     else
       if /\A\// =~ arg
         arg.scan(/\//) {
           if FileTest.directory?($` + '/CVSROOT')
-            cvsroot = L.new($`)
+            cvsroot = L.new($`, readonly)
             path = $'
             if FileTest.directory?(arg)
               return cvsroot.dir(path)
@@ -110,12 +112,12 @@ class CVS
           end
         }
         if FileTest.directory?(arg + '/CVSROOT')
-          return L.new(arg)
+          return L.new(arg, readonly)
         else
           raise CVSCreationError.new("cannot find CVS repositrory: #{arg}")
         end
       else
-        return R.new(arg)
+        return R.new(arg, readonly)
       end
     end
   end

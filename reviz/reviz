@@ -37,7 +37,7 @@ class ReViz
     else
       error("unknown cvsroot")
     end
-    @cvsroot = CVS.create(cvsroot)
+    @cvsroot = CVS.create(cvsroot, true)
 
     return unless @cgi.path_info
 

@@ -14,7 +14,6 @@
 * local mode
   * cache whole RCS file in memory.
   * don't use RCS.
-  * read only non-locking mode.
 
 * cache mode
   * implement.

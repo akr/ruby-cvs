@@ -3,8 +3,8 @@ require 'socket' # to use gethostname
 
 class CVS
   class L < R # local repository
-    def initialize(cvsroot)
-      super(cvsroot)
+    def initialize(cvsroot, readonly=false)
+      super(cvsroot, readonly)
     end
 
     def top_dir
@@ -253,6 +253,11 @@ class CVS
       end
 
       def read_lock
+	if @cvsroot.readonly
+	  yield
+	  return
+	end
+
 	if @lockstate != :unlock
 	  yield
 	else
@@ -275,6 +280,8 @@ class CVS
       end
 
       def write_lock
+	raise ReadOnlyMode.new('write_lock tried.') if @cvsroot.readonly
+
 	if @lockstate == :write_lock
 	  yield
 	else
