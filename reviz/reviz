@@ -193,31 +193,34 @@ class ReViz
   def list_repository
     @cgibuffer.print RSP.load("#{RSP_DIR}/list_repositories.rsp").new(
       CVSROOT_LIST.collect {|name, *rest|
-        [name, url('', {'cvsroot'=>name})]
-      }).gen
+	RSP[
+	  :name => name,
+	  :url => url('', {'cvsroot'=>name})
+	]}).gen
   end
 
   def view_directory
     @cgibuffer.print RSP.load("#{RSP_DIR}/view_directory.rsp").new(
-      RSP::Data.new(
+      RSP[
         :directory =>
 	  @cvsdir.listdir.sort {|a,b| a.path <=> b.path}.collect {|subdir|
-	    RSP::Data.new(
+	    RSP[
 	      :name => subdir.path,
-	      :url => url(subdir.path + '/'))},
+	      :url => url(subdir.path + '/')]},
         :file =>
 	  @cvsdir.listfile.sort {|a,b| a.path <=> b.path}.collect {|file|
-	    RSP::Data.new(
+	    RSP[
 	      :name => file.path,
-	      :url => url(file.path))})).gen
+	      :url => url(file.path)]}
+      ]).gen
   end
 
   def view_log
     logs = []
     @cvsfile.parse_log(ViewLogVisitor.new {|args| logs << rsp_log(*args)})
     @cgibuffer.print RSP.load("#{RSP_DIR}/view_log.rsp").new(
-      RSP::Data.new(
-        :logs => logs)).gen
+      RSP[
+        :logs => logs]).gen
   end
   class ViewLogVisitor < CVS::Visitor
     def initialize(&block)
@@ -241,7 +244,7 @@ class ReViz
 
   def rsp_log(rev, locked_by, date, author, state,
 	  add, del, branches, message, tags)
-    RSP::Data.new(
+    RSP[
       :rev => rev.to_s,
       :tags => tags,
       :checkout_url => url(@cvsfile.path, {'rev'=>rev.to_s}),
@@ -249,7 +252,7 @@ class ReViz
       :date => date,
       :author => author,
       :message => CGI::escapeHTML(message)
-    )
+    ]
   end
 
   def view_checkout(rev)
@@ -258,11 +261,11 @@ class ReViz
                        ["-r#{rev.to_s}"])
     @cvsfile.checkout(rev) {|contents, a|
       @cgibuffer.print RSP.load("#{RSP_DIR}/view_checkout.rsp").new(
-	RSP::Data.new(
+	RSP[
 	  :log => log,
 	  :contents => contents,
 	  :attributes => a.inspect
-	)).gen
+	]).gen
     }
   end
 
@@ -280,7 +283,7 @@ class ReViz
       }
       h[:date2] = date2 ? date2 : nil
       h[:nonewline] = /\n\z/ !~ contents
-      lines << RSP::Data.new(h)
+      lines << RSP[h]
       if rev1len < (l = rev1.to_s.length)
 	rev1len = l
       end
@@ -292,12 +295,12 @@ class ReViz
       end
     }
     @cgibuffer.print RSP.load("#{RSP_DIR}/view_annotate.rsp").new(
-      RSP::Data.new(
+      RSP[
         :rev1len => rev1len,
         :rev2len => rev2len,
         :authorlen => authorlen,
 	:lines => lines
-      )).gen
+      ]).gen
   end
 end
 

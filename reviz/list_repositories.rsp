@@ -4,9 +4,9 @@
 </head>
 <body>
 <ul>
-<%each {|name, url|
+<%each {|rep| with(rep) {
 %><li><a href="<%=url%>"><%=name%></a></li>
-<%}
+<%}}
 %></ul>
 </body>
 </html>

@@ -6,37 +6,31 @@
   require 'rsp'
   require 'cgi'
 
-  class Env
-    def title
-      'Environment variable list'
-    end
-    def each
-      ENV.each {|k, v| yield k, v}
-    end
-  end
-  e = Env.new
-
-  PageGen = RSP.load('envlist.rsp')
-
   print "Content-Type: text/html\n\n"
-  print PageGen.new(e).gen
+
+  print RSP.load('envlist.rsp').new(
+    ENV.keys.sort.collect {|k|
+      RSP[
+	:key => k,
+	:value => ENV[k]
+      ]}).gen
 === envlist.rsp:
   <html>
   <head>
-  <title><%=title%></title>
+  <title>Environment variable list</title>
   </head>
   <body>
   <dl>
-  <%each {|k, v|%>
-  <dt><%=CGI::escapeHTML(k)%></dt>
-  <dd><%=CGI::escapeHTML(v)%></dd>
-  <%}%>
+  <%each {|rsp| with(rsp) {%>
+  <dt><%=CGI::escapeHTML key%></dt>
+  <dd><%=CGI::escapeHTML value%></dd>
+  <%}}%>
   </dl>
   </body>
   </html>
 =end
 
-module RSP
+class RSP
   def RSP.compile_file(filename)
     if /\.rsp\z/ =~ filename
       compiledname = "#{$`}.rspc"
@@ -146,6 +140,22 @@ End
     end
   end
 
+  def RSP.[](hash)
+    return RSP.new(hash)
+  end
+
+  def initialize(hash)
+    @hash = hash.dup
+  end
+
+  def method_missing(msg_id, *args)
+    if @hash.include? msg_id
+      return @hash[msg_id]
+    else
+      raise ArgumentError.new("#{msg_id} not found")
+    end
+  end
+
   class StringBuffer
     def initialize
       @bufs = []
@@ -174,20 +184,6 @@ End
 
     def to_s
       return (@bufs + @buf).join
-    end
-  end
-
-  class Data
-    def initialize(hash)
-      @hash = hash.dup
-    end
-
-    def method_missing(msg_id, *args)
-      if @hash.include? msg_id
-	return @hash[msg_id]
-      else
-        raise ArgumentError.new("#{msg_id} not found")
-      end
     end
   end
 end
