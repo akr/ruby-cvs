@@ -37,6 +37,10 @@ class RCS
       return @arr.join('.')
     end
 
+    def inspect
+      return "#<#{self.class} #{self.to_s}>"
+    end
+
     def <=>(other)
       result = @arr.length <=> other.arr.length
       result = @arr <=> other.arr if result == 0

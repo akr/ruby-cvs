@@ -1,3 +1,4 @@
+require 'rcs'
 require 'fcntl'
 require 'socket' # to use gethostname
 
@@ -81,7 +82,7 @@ class CVS
 	    r, w = IO.pipe
 	    pid = fork {
 	      STDOUT.reopen(w)
-	      open('/dev/null', 'w') {|f| STDERR.reopen(f)}
+	      File.open('/dev/null', 'w') {|f| STDERR.reopen(f)}
 	      r.close
 	      w.close
 	      Dir.chdir(t.path)
@@ -115,28 +116,21 @@ class CVS
       def mkfile(name, contents, log, description='', branch_tag=nil, author=nil, date=nil, state=nil, rev=nil)
 	write_lock {
 	  if branch_tag
-	    h = mkfile(name, '', description,
-	      "file #{name} was initially added on branch #{branch_tag}.\n", nil, author, date, 'dead')
-	    h = h.file.mkbranch(h.head_rev, branch_tag)
+	    h = mkfile(name, '', "file #{name} was initially added on branch #{branch_tag}.\n",
+	      description, nil, author, date, 'dead')
+	    h = h.file.mkbranch(h.head_rev, branch_tag, 'dead')
 	    h.add(contents, log, author, date)
 	    return h
 	  else
+	    description += "\n" if description != '' && /\n\z/ !~ description
 	    state = 'Exp' if state == nil
 	    rev = Revision.create("1.1") if rev == nil
-	    work = TempDir.create
-	    work.open(name, 'w') {|f| f.print contents}
+
+	    rcs = RCS.new
+	    rcs.desc = description
+	    rcs.mkrev(contents, log, author, date, state, rev)
 	    f = simple_file(name, state == 'dead')
-	    command = ['ci']
-	    command << "-q"
-	    command << "-t-#{description}"
-	    command << "-m#{log}"
-	    command << "-w#{author}" if author
-	    command << "-d#{date}" if date
-	    command << "-r#{rev}" if rev
-	    command << "-s#{state}"
-	    command << f.rcs_pathname
-	    command << work.path(name)
-	    system *command
+	    f.open(:replace) {|out| rcs.dump(out)}
 	    return f.newhead(nil, nil, rev, state)
 	  end
 	}
@@ -346,13 +340,31 @@ class CVS
 	end
       end
 
+      def open(mode)
+        case mode
+	when :replace
+	  rcsname = rcs_pathname
+	  tmpname = @dir.cvsroot.cvsroot + '/' + @dir.path + '/,' + @name + ','
+	  File.open(tmpname, File::Constants::WRONLY | File::Constants::CREAT | File::Constants::EXCL) {|f|
+	    begin
+	      yield f
+	      File.rename(tmpname, rcsname)
+	    ensure
+	      File.unlink tmpname if FileTest.exist? tmpname
+	    end
+	  }
+	else
+	  raise ArgumentError.new("invalid access mode #{mode.inspect}")
+	end
+      end
+
       def parse_raw_log(visitor, opts=[])
 	@dir.read_lock {
 	  @dir.with_work {|t|
 	    r, w = IO.pipe
 	    pid = fork {
 	      STDOUT.reopen(w)
-	      open('/dev/null', 'w') {|f| STDERR.reopen(f)}
+	      File.open('/dev/null', 'w') {|f| STDERR.reopen(f)}
 	      r.close
 	      w.close
 	      Dir.chdir(t.path)
@@ -376,7 +388,7 @@ class CVS
 
       def parse_raw_rcs(visitor)
 	@dir.read_lock {
-	  open(rcs_pathname) {|r|
+	  File.open(rcs_pathname) {|r|
 	    Parser::RCS.new(r).parse(visitor)
 	  }
 	}
@@ -399,8 +411,8 @@ class CVS
       def checkout_ext(rev) # deplicated.
 	t = TempDir.create
 	pid = fork {
-	  open('/dev/null', 'w') {|f| STDOUT.reopen(f)}
-	  open('/dev/null', 'w') {|f| STDERR.reopen(f)}
+	  File.open('/dev/null', 'w') {|f| STDOUT.reopen(f)}
+	  File.open('/dev/null', 'w') {|f| STDERR.reopen(f)}
 	  Dir.chdir(t.path)
 	  command = ['co', '-ko', '-M']
 	  command << '-r' + rev.to_s
@@ -412,47 +424,19 @@ class CVS
 	raise CheckOutCommandFailure.new($?) if $? != 0
 	yield t.open(@name) {|f| [f.read, Attr.new(f.stat.mtime.gmtime, mode)]}
       end
+
+      def checkout(rev) 
+	contents = mtime = m = nil
+	@dir.read_lock {
+	  contents, mtime = RCS.parse(rcs_pathname).checkout(rev)
+	  m = mode
+	}
+	yield contents, Attr.new(mtime, m)
+      end
+
       class CheckInCommandFailure < StandardError
 	def initialize(status)
 	  super("status: #{status}")
-	end
-      end
-
-      def checkout(rev)
-	mtime, contents = parse_rcs(DeltaFilter.new(CheckoutVisitor.new(rev)) {
-	  |diffroot, difftree, editroot, edittree, editleaf|
-	  revs = {}
-	  r = rev
-	  while r
-	    revs[r] = true
-	    r = difftree[r]
-	  end
-	  revs
-	})
-	yield contents, Attr.new(mtime, mode)
-      end
-
-      class CheckoutVisitor < Visitor
-	def initialize(rev)
-	  @rev = rev
-	  @text = nil
-	  @mtime = nil
-	end
-
-        def delta(rev, date, author, state, branch, nextrev)
-	  @mtime = date if rev == @rev
-	end
-
-        def deltatext(rev, log, text)
-	  if @text
-	    @text.patch!(text)
-	  else
-	    @text = RCSText.new(text)
-	  end
-	end
-
-	def finished
-	  return @mtime, @text.to_s
 	end
       end
 
@@ -690,19 +674,10 @@ class CVS
 	end
       end
 
-      def mkbranch(rev, tag, state='Exp')
+      def mkbranch(rev, tag, state=nil)
 	@dir.write_lock {
 	  nums = {}
-	  tags.each {|t,r|
-	    if r.branch? && r.origin == rev
-	      n = r.arr[-1]
-	      nums[n] = n
-	    end
-	  }
-	  i = 2
-	  while nums.include? i
-	    i += 2
-	  end
+	  i, state = parse_log(MkBranchVisitor.new(rev, tag, state), state ? ['-h'] : [])
 
 	  branch_rev = Revision.create(rev.arr + [0, i])
 	  command = ['rcs']
@@ -712,6 +687,36 @@ class CVS
 	  system *command
 	  return newhead(tag, branch_rev, rev, state)
 	}
+      end
+
+      class MkBranchVisitor < Visitor
+	def initialize(rev, tag, state)
+	  @rev = rev
+	  @tag = tag
+	  @state = state
+	  @nums = {}
+	end
+
+        def symbol(tag, rev)
+	  if rev.branch? && rev.origin == @rev
+	    n = rev.arr[-1]
+	    @nums[n] = n
+	  end
+	end
+
+	def delta_rlog(rev, locked_by, date, author, state, add, del, branches, message)
+	  if rev == @rev
+	    @state = state
+	  end
+	end
+
+	def finished(buf)
+	  i = 2
+	  while @nums.include? i
+	    i += 2
+	  end
+	  return i, @state
+	end
       end
 
       def heads

@@ -128,7 +128,7 @@ class CVS
 	  err = TempDir.global.newpath
 	  wdname = wd.basename
 	  wd.run_cvs(['update', '-r00', '-d', '-p', wdname], nil, err) {|status|
-	    open(err) {|f|
+	    File.open(err) {|f|
 	      f.each_line {|line|
 		p line
 		if / server: New directory `#{wdname}\/(.*)' -- ignored\n\z/ =~ line
@@ -148,7 +148,7 @@ class CVS
 	  out = TempDir.global.newpath
 	  wdname = wd.basename
 	  wd.run_cvs(['log', '-R', wdname], out) {|status|
-	    open(out) {|f|
+	    File.open(out) {|f|
 	      f.each_line {|line|
 		if /\/(Attic\/)?([^\/]*),v\n\z/ =~ line
 		  res << file($2, $1 != nil)
@@ -171,7 +171,7 @@ class CVS
 	  out = TempDir.global.newpath
 	  wdname = wd.basename
 	  wd.run_cvs(['log', *opts] << wdname, out) {|status|
-	    open(out) {|f|
+	    File.open(out) {|f|
 	      parser = Parser::Log.new(f)
 	      until parser.eof?
 	        res << parser.parse(visitor)
@@ -207,7 +207,7 @@ class CVS
 	  wd.update_entries
 	  args = ['commit', '-f', '-m', log, wd.basename + '/' + name]
 	  wd.run_cvs(args, out) {|status|
-	    open(out) {|f|
+	    File.open(out) {|f|
 	      f.each_line {|line|
 		if /^initial revision: ([0-9.]+)$/ =~ line
 		  newrev = Revision.create($1)
@@ -250,7 +250,7 @@ class CVS
 	  args = ['log', *opts]
 	  args << (wd.basename + '/' + @name)
 	  wd.run_cvs(args, out) {|status|
-	    open(out) {|f|
+	    File.open(out) {|f|
 	      res = Parser::Log.new(f).parse(visitor)
 	    }
 	    File.unlink(out)
@@ -294,7 +294,7 @@ class CVS
 	@dir.with_work {|wd|
 	  out = TempDir.global.newpath
 	  wd.run_cvs(['annotate', '-r' + rev.to_s, wd.basename + '/' + @name], out)
-	  open(out) {|f|
+	  File.open(out) {|f|
 	    f.each_line {|line|
 	      if /\A([0-9.]+) +\(([^ ]+) +(..)-(...)-(..)\): / =~ line
 		rev = Revision.create($1)
@@ -425,7 +425,7 @@ class CVS
 	    wd.entries[@file.name] = "0/dummy/-ko/#{@branch_tag && ('T' + @branch_tag)}"
 	    wd.update_entries
 	    wd.run_cvs(['commit', '-f', '-m', log, wd.basename + '/' + @file.name], out)
-	    open(out) {|f|
+	    File.open(out) {|f|
 	      f.each_line {|line|
 		if /^initial revision: ([0-9.]+)$/ =~ line
 		  newrev = Revision.create($1)
@@ -451,7 +451,7 @@ class CVS
 	    wd.entries[@file.name] = "#{current_rev}/dummy/-ko/#{@branch_tag && ('T' + @branch_tag)}"
 	    wd.update_entries
 	    wd.run_cvs(['commit', '-f', '-m', log, wd.basename + '/' + @file.name], out)
-	    open(out) {|f|
+	    File.open(out) {|f|
 	      f.each_line {|line|
 		if /^new revision: ([0-9.]+); previous revision: [0-9.]+$/ =~ line
 		  newrev = Revision.create($1)
@@ -473,7 +473,7 @@ class CVS
 	    wd.entries[@file.name] = "-#{current_rev}/dummy timestamp/-ko/#{@branch_tag && ('T' + @branch_tag)}"
 	    wd.update_entries
 	    wd.run_cvs(['commit', '-f', '-m', log, wd.basename + '/' + @file.name], out, '/dev/tty')
-	    open(out) {|f|
+	    File.open(out) {|f|
 	      f.each_line {|line|
 		if /^new revision: delete; previous revision: ([0-9.]+)$/ =~ line
 		  prev_rev = Revision.create($1)

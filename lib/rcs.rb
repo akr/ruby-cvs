@@ -9,7 +9,7 @@ class RCS
 
   def RCS.parse(filename)
     rcs = RCS.new
-    open(filename) {|f|
+    File.open(filename) {|f|
       Parser.new(f).parse(
         Parser::PhraseVisitor.new(
 	  Parser::RCSVisitor.new(
@@ -99,8 +99,8 @@ class RCS
     @symbols = []
     @locks = []
   end
-  attr_reader :admin_phrase, :desc
-  attr_accessor :head, :branch, :symbols, :locks
+  attr_reader :admin_phrase
+  attr_accessor :desc, :head, :branch, :symbols, :locks
 
   def [](rev)
     return @delta[rev]
@@ -192,6 +192,8 @@ class RCS
 	d.dump_deltatext(out)
       }
     end
+
+    return out
   end
 
   def each_delta(rev=@head, &block)
@@ -213,8 +215,12 @@ class RCS
     revs.each {|r| each_deltatext(r, &block)}
   end
 
+  class RevisionNotExist < StandardError
+  end
   def checkout(rev)
     d = @delta[rev]
+    raise RevisionNotExist.new("checkout non-existing revision #{rev}") unless d
+    mtime = d.date
     ds = []
     until d == nil
       ds << d
@@ -226,14 +232,14 @@ class RCS
       t.patch!(ds.pop.text)
     end
 
-    return t.to_s
+    return t.to_s, mtime
   end
 
   def RCS.diff(a, b)
     apath = TempDir.global.newpath
     bpath = TempDir.global.newpath
-    open(apath, 'w') {|f| f.print a}
-    open(bpath, 'w') {|f| f.print b}
+    File.open(apath, 'w') {|f| f.print a}
+    File.open(bpath, 'w') {|f| f.print b}
     ret = `diff -n #{apath} #{bpath}`
     File.unlink apath, bpath
     return ret
@@ -273,7 +279,7 @@ class RCS
     end
 
     d = Delta.new(rev)
-    d.date = date
+    d.date = date.dup.utc
     d.author = author
     d.state = state
     d.log = log

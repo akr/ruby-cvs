@@ -26,6 +26,10 @@ class RCS
       @str = s
     end
     attr_reader :str
+
+    def inspect
+      return "#<#{self.class} #{@str.inspect}>"
+    end
   end
 
   class STR < Token
