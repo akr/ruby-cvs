@@ -290,7 +290,7 @@ class ReViz
 	   'date1' => date1.strftime('%Y/%m/%d'),
 	   'rev1' => rev1.to_s.ljust(revlen),
 	   'author' => CGI::escapeHTML(author).center(8),
-	   'rev2' => rev1.to_s.ljust(revlen)
+	   'rev2' => rev2.to_s.ljust(revlen)
       }
       h['date2'] = date2 ? date2.strftime('%Y/%m/%d') : ' ' * 10
       h['nonewline'] = "\nno newline at last\n" unless /\n\z/ =~ line
