@@ -13,6 +13,7 @@ class CVS
 	arr = []
 	arg.scan(/\d+/) {|num| arr << num.to_i}
       when Array
+	arg.each {|n| raise ArgumentError.new("argument array has non-integer: #{arg.inspect}") unless Integer === n}
         arr = arg
       else
 	raise RevisionError.new(arg)
