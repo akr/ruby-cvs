@@ -146,7 +146,8 @@ class Diff
     return lcs
   end
 
-  def ses(algorithm=:speculative) # shortest edit script
+  def ses(algorithm=nil) # shortest edit script
+    algorithm ||= :speculative
     lcs = lcs(algorithm)
     ses = EditScript.new
     i0 = j0 = 0

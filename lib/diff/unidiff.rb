@@ -1,13 +1,23 @@
 class Diff
-  def Diff.unidiff(a, b)
+  def Diff.unidiff(a, b, algorithm=nil)
     al = []
     a.each_line {|l| al << l}
     bl = []
     b.each_line {|l| bl << l}
-    return Diff.new(al, bl).ses.unidiff
+    return Diff.new(al, bl).ses(algorithm).unidiff
   end
 
   class EditScript
+    def unidiff_hunk_header(l1, ll1, l2, ll2)
+      l1 = 0 if ll1 == 0
+      l2 = 0 if ll2 == 0
+      result = "@@ -#{l1}"
+      result << ",#{ll1}" if ll1 != 1
+      result << " +#{l2}"
+      result << ",#{ll2}" if ll2 != 1
+      result << " @@\n"
+    end
+
     def unidiff(out='', context_lines=3)
       state = :common
       l1 = l2 = 1
@@ -45,7 +55,7 @@ class Diff
 		i += 1
 	      end
 
-	      out << "@@ -#{hunk_l1},#{l1 - hunk_l1} +#{hunk_l2},#{l2 - hunk_l1} @@\n"
+	      out << unidiff_hunk_header(hunk_l1, l1 - hunk_l1, hunk_l2, l2 - hunk_l1)
 	      h = hunk.length - (hunk_tail - context_lines)
 	      (0...h).each {|j| out << hunk[j]}
 	      hunk[0, h] = []
@@ -97,7 +107,7 @@ class Diff
 	  l1 -= i
 	  l2 -= i
 	end
-	out << "@@ -#{hunk_l1},#{l1 - hunk_l1} +#{hunk_l2},#{l2 - hunk_l1} @@\n"
+	out << unidiff_hunk_header(hunk_l1, l1 - hunk_l1, hunk_l2, l2 - hunk_l1)
 	hunk.each {|line| out << line}
       end
       return out
