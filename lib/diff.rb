@@ -141,7 +141,7 @@ class Diff
         lcs.add @revert_index_a[i+k], @revert_index_b[j+k]
       }
     }
-    lcs.add @prefix.length + @middle_a.length, @prefix.length + @middle_a.length, @suffix.length if 0 < @suffix.length
+    lcs.add @prefix.length + @middle_a.length, @prefix.length + @middle_b.length, @suffix.length if 0 < @suffix.length
 
     return lcs
   end
