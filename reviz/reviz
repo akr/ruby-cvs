@@ -178,6 +178,7 @@ class ReViz
       @cvsdir = cvsdir
       @files = files
 
+      @tagrev = tagrev
       @tag = nil
       @rev0 = nil
       begin
@@ -236,7 +237,8 @@ class ReViz
 	  :date => @date,
 	  :author => @author,
 	  :state => @state,
-	  :message => @message
+	  :message => @message,
+	  :removed => @tagrev ? @state == 'dead' : @cvsfile.attic
 	]
       end
     end
