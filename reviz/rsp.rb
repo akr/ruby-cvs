@@ -80,7 +80,19 @@ class RSP
   end
 
   def RSP.check_code(code)
-    eval "lambda { #{code}\n}"
+    err = Thread.start {
+      $SAFE=4
+      begin
+	eval "lambda { #{code}\n}"
+	nil
+      rescue SyntaxError
+	$!
+      end
+    }.value
+
+    if err
+      raise err
+    end
   end
 
   def RSP.load(filename)
