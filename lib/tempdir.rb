@@ -30,8 +30,8 @@ class TempDir
   returns associated temporary directory object.
   `keyword' is used for prefix of temporary directory name.
 
-  The temporary directory and all files under the directory is removed when
-  the associated temporary directory object is collected as garbage.
+  The temporary directory and all files under the directory are removed when
+  the associated temporary directory object is collected as a garbage.
 
   If a block is given, it is used to generate new filenames under the
   temporary directory.  It is called when new filename is requried.
@@ -123,7 +123,9 @@ class TempDir
     if block_given?
       return File.open(path(name), *rest) {|f| yield f}
     else
-      return File.open(path(name), *rest)
+      f = File.open(path(name), *rest)
+      f.instance_eval { @containing_temporary_directory = self }
+      return f
     end
   end
 
@@ -137,7 +139,7 @@ class TempDir
 
   The created temporary directory and all files under the directory is
   removed when the associated temporary directory object is collected
-  as garbage.
+  as a garbage.
   Note that parent directory object doesn't collected until all subdirectory
   objects are collected because a subdirectory object refer the parent
   temporary directory object. 
