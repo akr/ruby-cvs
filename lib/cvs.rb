@@ -28,7 +28,7 @@
 
   # needs to be local repository:
   c = CVS.create('/home/foo/.cvsroot')
-  c.file('cvs/ChangeLog').parse_raw_rcs(CVS::Visitor::Dump.new)
+  c.file('cvs/ChangeLog').parse_log(CVS::Visitor::Dump.new)
   c.file('cvs/ChangeLog').fullannotate(RCS::Revision.create("1.30")) {|line, date1, rev1, author, rev2, date2| p [line, date1, rev1.to_s, author, rev2.to_s, date2]}
 
 =end
