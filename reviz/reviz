@@ -18,6 +18,8 @@ class ReViz
     'only_with_tag' => nil,
   }
 
+  CheckoutMagicPath = '~checkout~'
+
   def initialize
     @cgi = CGI.new
   end
@@ -45,6 +47,13 @@ class ReViz
       next if name == '.' || name == '..'
       path << name
     }
+
+    if path[0] == CheckoutMagicPath
+      @checkoutmagic = true
+      path.shift
+    else
+      @checkoutmagic = false
+    end
 
     @cvsdir = @cvsroot.top_dir
     @cvsfile = nil
@@ -146,20 +155,202 @@ class ReViz
 	]}).gen
   end
 
-  def view_directory
-    if @cgi.has_key? 'only_with_tag'
-      tagrev = @cgi['only_with_tag'][0]
-      opts = []
-      # Note that following options doesn't work for branches
-      # in local repository because `magic branch numbers' of cvs.
-      # opts = ['-N', "-r#{tagrev}:#{tagrev}"]
-    else
-      tagrev = nil
-      opts = ['-N', '-r']
+  # RevFilter represents subset of revisions.
+  class RevFilter
+    def RevFilter.create(spec=nil)
+      case spec
+      when nil
+	return All.new
+      when String
+        case spec
+	when 'MAIN'
+	  return MainTrunk.new
+	when 'HEAD'
+	  return Head.new
+	end
+	begin
+	  rev = CVS::Revision.create(spec)
+	  return Rev.new(rev)
+	rescue CVS::Revision::RevisionError
+	  return Tag.new(spec)
+	end
+      when Revision
+	return Rev.new(spec)
+      end
+      raise RevFilterError.new("unrecognized spec: #{spec.inspect}")
+    end
+    class RevFilterError < StandardError
     end
 
+    def initialize
+      @branch = nil
+      @tag = {}
+      @revs = []
+      @one = nil
+    end
+    attr_reader :revs, :one
+
+    def head(rev)
+      @head = rev
+    end
+
+    def branch(rev)
+      @branch = rev
+    end
+
+    def symbol(sym, rev)
+      @tag[sym] = rev
+    end
+
+    def revision(rev)
+      update_revs(rev)
+      update_one(rev)
+    end
+
+    def update_revs(rev)
+      @revs << rev
+    end
+
+    def update_one(rev)
+      @one = rev if !@one || @one < rev
+    end
+
+    def parse_log_opts_one
+      return parse_log_opts_all
+    end
+
+    def parse_log_opts_all
+      return []
+    end
+
+    def attic_sensitive?
+      return false
+    end
+
+    class All < RevFilter
+      def parse_log_opts_one
+	return ['-N', '-r']
+      end
+
+      def parse_log_opts_all
+	return ['-N']
+      end
+
+      def update_one(rev)
+	super if @branch ? rev.on?(@branch) : rev.on_trunk?
+      end
+
+      def attic_sensitive?
+	return true
+      end
+    end
+
+    class MainTrunk < RevFilter
+      def parse_log_opts_one
+	return ['-N', '-r']
+      end
+
+      def parse_log_opts_all
+	return ['-N']
+      end
+
+      def revision(rev)
+	super if @branch ? rev.on?(@branch) : rev.on_trunk?
+      end
+
+      def attic_sensitive?
+	return true
+      end
+    end
+
+    class Head < RevFilter
+      def parse_log_opts_all
+	return ['-N', '-r']
+      end
+
+      def revision(rev)
+	if @branch
+	  if rev.on?(@branch)
+	    if @revs.empty?
+	      @revs << rev
+	      @one = rev
+	    else
+	      @revs[0] = @one = rev if @one < rev
+	    end
+	  end
+	else
+	  if rev.on_trunk?
+	    if @revs.empty?
+	      @revs << rev
+	      @one = rev
+	    else
+	      @revs[0] = @one = rev if @one < rev
+	    end
+	  end
+	end
+      end
+
+      def attic_sensitive?
+	return true
+      end
+    end
+
+    class Tag < RevFilter
+      def initialize(tag)
+	super()
+        @target_tag = tag
+      end
+
+      def symbol(sym, rev)
+        super
+	@target_rev = rev if sym == @target_tag
+      end
+
+      def revision(rev)
+        if @target_rev
+	  if @target_rev.branch?
+	    super if rev.on?(@target_rev)
+	  else
+	    super if rev == @target_rev
+	  end
+	end
+      end
+    end
+
+    class Rev < RevFilter
+      def initialize(rev)
+	super()
+        @target_rev = rev
+      end
+
+      def parse_log_opts_one
+	if @target_rev.branch?
+	  return ['-N', "-r#{@target_rev.to_s}:."]
+	else
+	  return ['-N', "-r#{@target_rev.to_s}"]
+	end
+      end
+
+      def parse_log_opts_all?(rev)
+	return ['-N', "-r#{@target_rev.to_s}"]
+      end
+
+      def revision(rev)
+	if @target_rev.branch?
+	  super if rev.on?(@target_rev)
+	else
+	  super if rev == @target_rev
+	end
+      end
+    end
+  end
+
+  def view_directory
+    filter = RevFilter.create(@cgi['only_with_tag'][0])
+    opts = filter.parse_log_opts_one
+
     files = []
-    @cvsdir.parse_log(ViewDirectoryVisitor.new(self, @cvsdir, tagrev, files), opts)
+    @cvsdir.parse_log(ViewDirectoryVisitor.new(self, @cvsdir, filter, files), opts)
     files.sort! {|a,b| a.name <=> b.name}
     return RSP.load("#{RSP_DIR}/view_directory.rsp").new(
       RSP[
@@ -173,24 +364,16 @@ class ReViz
       ]).gen
   end
   class ViewDirectoryVisitor < CVS::Visitor
-    def initialize(reviz, cvsdir, tagrev, files)
+    def initialize(reviz, cvsdir, filter, files)
       @reviz = reviz
       @cvsdir = cvsdir
+      @filter_orig = filter
       @files = files
-
-      @tagrev = tagrev
-      @tag = nil
-      @rev0 = nil
-      begin
-        @rev0 = CVS::Revision.create(tagrev)
-      rescue CVS::Revision::RevisionError
-	@tag = tagrev
-      end
     end
 
     def rcsfile_splitted(dir, file, attic)
+      @filter = @filter_orig.dup
       @cvsfile = @cvsdir.file(file, attic)
-      @rev = @rev0
       @target = nil
       @date = nil
       @author = nil
@@ -198,37 +381,36 @@ class ReViz
       @message = nil
     end
 
+    def head(rev)
+      @filter.head(rev)
+    end
+
     def branch(rev)
-      @rev = rev unless @tag || @rev
+      @filter.branch(rev)
     end
 
     def symbol(sym, rev)
-      @rev = rev if @tag == sym
-    end
-
-    def delta_finished
-      @rev = false if @tag && !@rev
+      @filter.symbol(sym, rev)
     end
 
     def delta_without_next(rev, date, author, state, branches)
-      if !@rev.equal?(false) && (rev == @rev || rev.on?(@rev))
-	if !@target || @target < rev
-	  @target = rev
-	  @date = date
-	  @author = author
-	  @state = state
-	end
+      @filter.revision(rev)
+      if rev == @filter.one
+	@target = rev
+	@date = date
+	@author = author
+	@state = state
       end
     end
 
     def deltatext_log(rev, message)
-      if @target == rev
+      if rev == @filter.one
         @message = message
       end
     end
 
     def finished(buf)
-      if !@rev.equal?(false)
+      if @target
 	@files << RSP[
 	  :name => @cvsfile.name,
 	  :path => @cvsfile.path,
@@ -238,7 +420,8 @@ class ReViz
 	  :author => @author,
 	  :state => @state,
 	  :message => @message,
-	  :removed => @tagrev ? @state == 'dead' : @cvsfile.attic
+	  :removed => @state == 'dead' || @filter.attic_sensitive? && @cvsfile.attic
+
 	]
       end
     end
@@ -277,6 +460,7 @@ class ReViz
     RSP[
       :rev => rev.to_s,
       :tags => tags,
+      :tagged_urls => Hash[*tags.collect {|tag| [tag, url(@cvsfile.path, {'only_with_tag'=>tag})]}.flatten],
       :checkout_url => url(@cvsfile.path, {'rev'=>rev.to_s}),
       :annotate_url => url(@cvsfile.path, {'annotate'=>rev.to_s}),
       :date => date,

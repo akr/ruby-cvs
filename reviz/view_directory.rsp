@@ -34,14 +34,14 @@ end
 </tr>
 <%directory.each_with {
 %><tr>
-  <td><a href="<%=url%>"><%=CGI::escapeHTML name%></a></td>
+  <td><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML name%></a></td>
 </tr>
 <%}
 %>
 
 <%file.each_with {
 %><tr>
-  <td><a href="<%=url%>"><%=CGI::escapeHTML name%></a><%
+  <td><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML name%></a><%
   if removed
 %> (removed)<%
   end

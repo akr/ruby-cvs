@@ -1,3 +1,4 @@
+#!/usr/bin/env ruby
 =begin
 = rsp.rb - Ruby Server Pages :-)
 
@@ -43,9 +44,8 @@
 
 class Array
   def each_with(&block)
-    each {|v|
-      eval("lambda {|v, b| with(v, &b)}", block).call(v, block)
-    }
+    proc = eval("lambda {|v, b| with(v, &b)}", block)
+    each {|v| proc.call(v, block)}
   end
 end
 
@@ -65,6 +65,7 @@ class RSP
     end
 
     code = compile_code(filename)
+    check_code(code)
 
     begin
       tmpname = compiledname + ".#{$$}"
@@ -74,6 +75,10 @@ class RSP
     end
 
     return code
+  end
+
+  def RSP.check_code(code)
+    eval "lambda { #{code}\n}"
   end
 
   def RSP.load(filename)
@@ -87,8 +92,10 @@ class RSP
   def RSP.compile_code(filename)
     class_code = StringBuffer.new
     gen_body = StringBuffer.new
-    compile_template(class_code, gen_body, filename)
+    depend = []
+    compile_template(class_code, gen_body, filename, depend)
     return <<"End"
+# #{depend.join(' ')}
 Class.new.class_eval {
 def initialize(obj)
   @objs = [obj]
@@ -125,7 +132,8 @@ End
   class RSPError < StandardError
   end
 
-  def RSP.compile_template(class_code, gen_body, filename)
+  def RSP.compile_template(class_code, gen_body, filename, depend=[])
+    depend << filename
     template = open(filename) {|f| f.read}
 
     state = :contents
@@ -163,7 +171,7 @@ End
 	    case data
 	    when /include\s+file="(.*)"\s*\z/
 	      RSP.compile_template(class_code, gen_body,
-		File.dirname(filename) + '/' + $1)
+		File.dirname(filename) + '/' + $1, depend)
 	    else
 	      raise RSPError.new("#{filename}:#{linenumber}: unknown directive: #{data}")
 	    end
@@ -200,7 +208,6 @@ End
     return @hash.include?(name) || super(name, priv)
   end
 
-
   class StringBuffer
     def initialize
       @bufs = []
@@ -234,8 +241,22 @@ End
 end
 
 if __FILE__ == $0
-  ARGV.each {|filename|
-    print RSP.compile_file(filename)
+  opt_p = false
+  ARGV.each {|arg|
+    if arg == '-p'
+      opt_p = true
+    else
+      if opt_p
+	print RSP.compile_code(arg)
+      else
+	begin
+	  RSP.compile_file(arg)
+	rescue Exception
+	  STDERR.print "#{arg} has an error.\n"
+	  raise
+	end
+      end
+    end
   }
 end
 

@@ -1,10 +1,15 @@
 <p>
+<%tagged_urls.each {|tag, url|%>
+<a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML tag%></a>
+<%}%>
+</p>
+<p>
 <a name="#rev<%=rev%>"></a>
 <%tags.each {|tag|
-%><a name="#<%=tag%>"></a>
+%><a name="#<%=CGI::escapeHTML tag%>"></a>
 <%}
-%>Revision <b><a href="<%=checkout_url%>"><%=rev%></a></b> /
-<a href="<%=annotate_url%>">annotate</a>,
+%>Revision <b><a href="<%=CGI::escapeHTML checkout_url%>"><%=rev%></a></b> /
+<a href="<%=CGI::escapeHTML annotate_url%>">annotate</a>,
 <i><%=CGI::escapeHTML date.to_s%></i> by <i><%=CGI::escapeHTML author%></i>
 </p>
 <pre><%=CGI::escapeHTML message%></pre>
