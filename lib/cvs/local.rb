@@ -126,11 +126,9 @@ class CVS
 	    state = 'Exp' if state == nil
 	    rev = Revision.create("1.1") if rev == nil
 
-	    rcs = RCS.new
-	    rcs.desc = description
-	    rcs.mkrev(contents, log, author, date, state, rev)
+	    rcs = RCS.new(description).mkrev(contents, log, author, date, state, rev)
 	    f = simple_file(name, state == 'dead')
-	    f.open(:replace) {|out| rcs.dump(out)}
+	    f.create {rcs}
 	    return f.newhead(nil, nil, rev, state)
 	  end
 	}
@@ -340,22 +338,56 @@ class CVS
 	end
       end
 
-      def open(mode)
-        case mode
-	when :replace
-	  rcsname = rcs_pathname
-	  tmpname = @dir.cvsroot.cvsroot + '/' + @dir.path + '/,' + @name + ','
-	  File.open(tmpname, File::Constants::WRONLY | File::Constants::CREAT | File::Constants::EXCL) {|f|
-	    begin
-	      yield f
-	      File.rename(tmpname, rcsname)
-	    ensure
-	      File.unlink tmpname if FileTest.exist? tmpname
-	    end
-	  }
-	else
-	  raise ArgumentError.new("invalid access mode #{mode.inspect}")
-	end
+      class RCSFileExist < StandardError
+      end
+      def create
+	rcsname = rcs_pathname
+	raise RCSFileExist.new(rcsname) if FileTest.exist? rcsname
+	tmpname = @dir.cvsroot.cvsroot + '/' + @dir.path + '/,' + @name + ','
+	rcs = yield
+	File.open(tmpname, File::Constants::WRONLY |
+			   File::Constants::TRUNC |
+			   File::Constants::CREAT |
+			   File::Constants::EXCL) {|f|
+	  begin
+	    rcs.dump(f)
+	    rcsname = rcs_pathname(@attic = rcs.attic?)
+	    dirname = File.dirname rcsname
+	    Dir.mkdir(dirname, 0775) unless FileTest.directory? dirname
+	    File.rename(tmpname, rcsname)
+	  ensure
+	    File.unlink tmpname if FileTest.exist? tmpname
+	  end
+	}
+      end
+
+      class NotExist < StandardError
+      end
+      def replace
+        rcsname = rcs_pathname
+	raise NotExist.new(rcsname) unless FileTest.exist? rcsname
+	tmpname = @dir.cvsroot.cvsroot + '/' + @dir.path + '/,' + @name + ','
+	rcs = RCS.parse(rcsname)
+	yield rcs
+	File.open(tmpname, File::Constants::WRONLY |
+			   File::Constants::TRUNC |
+			   File::Constants::CREAT |
+			   File::Constants::EXCL) {|f|
+	  begin
+	    rcs.dump(f)
+	    newrcsname = rcs_pathname(@attic = rcs.attic?)
+	    File.rename(tmpname, newrcsname)
+	    File.unlink(rcsname) if newrcsname != rcsname
+	  ensure
+	    File.unlink tmpname if FileTest.exist? tmpname
+	  end
+	}
+      end
+
+      def parse
+        rcsname = rcs_pathname
+	raise NotExist.new(rcsname) unless FileTest.exist? rcsname
+	return RCS.parse(rcsname)
       end
 
       def parse_raw_log(visitor, opts=[])
@@ -379,6 +411,32 @@ class CVS
 	    Process.waitpid(pid, 0)
 	    return res
 	  }
+	}
+      end
+
+      def parse_log(visitor, opts=[])
+        @dir.read_lock {
+	  rcs = parse
+	  visitor.rcsfile(rcs_pathname)
+	  visitor.rcsfile_splitted(@dir.cvsroot.cvsroot + '/' + @dir.path, @name, @attic)
+	  #visitor.working_file(...)
+	  visitor.head(rcs.head)
+	  visitor.branch(rcs.branch)
+	  #visitor.lock_strict if rcs.admin_phrase.include? :strict
+	  #rcs.locks.each {|user, rev| visitor.lock(user, rev)}
+	  #visitor.access(rcs.admin_phrase[:access]...)
+	  rcs.symbols.each {|sym, rev| visitor.symbol(sym, rev)}
+	  #visitor.total_revisions(...)
+	  #visitor.selected_revisions(...)
+	  visitor.delta_finished
+	  visitor.description(rcs.desc)
+	  rcs.each_delta {|d|
+	    visitor.delta_without_next(d.rev, d.date, d.author, d.state, d.branches)
+	    visitor.delta(d.rev, d.date, d.author, d.state, d.branches, d.nextrev)
+	    visitor.deltatext_log(d.rev, d.log)
+	    visitor.deltatext(d.rev, d.log, d.text)
+	  }
+	  visitor.finished(nil)
 	}
       end
 
@@ -408,23 +466,6 @@ class CVS
         }
       end
 
-      def checkout_ext(rev) # deplicated.
-	t = TempDir.create
-	pid = fork {
-	  File.open('/dev/null', 'w') {|f| STDOUT.reopen(f)}
-	  File.open('/dev/null', 'w') {|f| STDERR.reopen(f)}
-	  Dir.chdir(t.path)
-	  command = ['co', '-ko', '-M']
-	  command << '-r' + rev.to_s
-	  command << rcs_pathname
-	  File.umask(0)
-	  exec *command
-	}
-	Process.waitpid(pid, 0)
-	raise CheckOutCommandFailure.new($?) if $? != 0
-	yield t.open(@name) {|f| [f.read, Attr.new(f.stat.mtime.gmtime, mode)]}
-      end
-
       def checkout(rev) 
 	contents = mtime = m = nil
 	@dir.read_lock {
@@ -432,12 +473,6 @@ class CVS
 	  m = mode
 	}
 	yield contents, Attr.new(mtime, m)
-      end
-
-      class CheckInCommandFailure < StandardError
-	def initialize(status)
-	  super("status: #{status}")
-	end
       end
 
       def annotate(rev)
@@ -674,49 +709,33 @@ class CVS
 	end
       end
 
+      class TagExist < StandardError
+      end
       def mkbranch(rev, tag, state=nil)
 	@dir.write_lock {
-	  nums = {}
-	  i, state = parse_log(MkBranchVisitor.new(rev, tag, state), state ? ['-h'] : [])
+	  branch_rev = nil
+	  replace {|rcs|
+	    nums = {}
+	    rcs.symbols.each {|t, r|
+	      raise TagExist.new(tag) if t == tag
+	      if r.branch? && r.origin == rev
+		n = r.arr[-1]
+		nums[n] = n
+	      end
+	    }
+	    rcs.each_delta {|d|
+	      state = d.state if d.rev == rev
+	    }
 
-	  branch_rev = Revision.create(rev.arr + [0, i])
-	  command = ['rcs']
-	  command << "-q"
-	  command << "-n#{tag}:#{branch_rev.to_s}"
-	  command << rcs_pathname
-	  system *command
+	    i = 2
+	    while nums.include? i
+	      i += 2
+	    end
+	    branch_rev = Revision.create(rev.arr + [0, i])
+	    rcs.symbols << [tag, branch_rev]
+	  }
 	  return newhead(tag, branch_rev, rev, state)
 	}
-      end
-
-      class MkBranchVisitor < Visitor
-	def initialize(rev, tag, state)
-	  @rev = rev
-	  @tag = tag
-	  @state = state
-	  @nums = {}
-	end
-
-        def symbol(tag, rev)
-	  if rev.branch? && rev.origin == @rev
-	    n = rev.arr[-1]
-	    @nums[n] = n
-	  end
-	end
-
-	def delta_rlog(rev, locked_by, date, author, state, add, del, branches, message)
-	  if rev == @rev
-	    @state = state
-	  end
-	end
-
-	def finished(buf)
-	  i = 2
-	  while @nums.include? i
-	    i += 2
-	  end
-	  return i, @state
-	end
       end
 
       def heads
@@ -729,81 +748,6 @@ class CVS
       class Head < R::F::Head
         def initialize(file, branch_tag, branch_rev, head_rev, state, default_branch_head=nil)
 	  super(file, branch_tag, branch_rev, head_rev, state, default_branch_head)
-	end
-
-	def rcs_lock(rev)
-	  command = ['rcs', '-q', "-l#{rev}", @file.rcs_pathname]
-	  system *command
-	  raise RCSLockCommandFailure.new($?) if $? != 0
-	end
-	class RCSLockCommandFailure < StandardError
-	  def initialize(status)
-	    super("status: #{status}")
-	  end
-	end
-
-	def run_ci(contents, log, desc, state, author, date)
-	  @work = TempDir.create unless @work
-	  basename = @file.name
-	  @work.open(basename, 'w') {|f| f.print contents}
-
-	  @file.dir.write_lock {
-	    rcsfile = @file.rcs_pathname
-
-	    unless @branch_tag && @branch_rev.origin == @head_rev
-	      rcs_lock @head_rev
-	    end
-	    pid = fork {
-	      command = ['ci',
-		'-f',
-		"-q#{next_rev}",
-		'-m' + (/\A\s*\z/ =~ log ? '*** empty log message ***' : log),
-		"-t-#{desc}",
-		"-s#{state}",
-	      ]
-	      command << "-w#{author}" if author
-	      command << "-d#{date}" if date
-	      command += [
-		rcsfile, 
-		@work.path(basename)
-	      ]
-	      exec *command
-	    }
-	    Process.waitpid(pid, 0)
-	    raise CheckInCommandFailure.new($?) if $? != 0
-
-	    if @default_branch_head
-	      pid = fork {
-		command = ['rcs',
-		  '-q',
-		  '-b',
-		  rcsfile
-		]
-		exec *command
-	      }
-	      Process.waitpid(pid, 0)
-	      raise RCSCommandFailure.new($?) if $? != 0
-	      @default_branch_head = nil
-	    end
-
-	    if @branch_tag == nil && @head_rev.on_trunk?
-	      attic = state == 'dead'
-	      newrcsfile = @file.rcs_pathname(attic)
-	      if newrcsfile != rcsfile
-		dir = @file.dir.cvsroot.cvsroot + '/' + @file.dir.path
-	        if attic && ! FileTest.directory?(dir + '/Attic')
-		  Dir.mkdir(dir + '/Attic', 0775)
-		end
-		File.rename(rcsfile, newrcsfile)
-		@file.adjust_attic(attic)
-	      end
-	    end
-	  }
-	end
-	class CheckInCommandFailure < StandardError
-	  def initialize(status)
-	    super("status: #{status}")
-	  end
 	end
 
 =begin
@@ -833,7 +777,19 @@ class CVS
 
 	def mkrev(contents, log, author=nil, date=nil, state=nil)
 	  state = 'Exp' if state == nil
-	  run_ci(contents, log, '', state, author, date)
+	  @file.dir.write_lock {
+	    @file.replace {|rcs|
+	      rcs.mkrev(contents, log, author, date, state, next_rev)
+	      if @default_branch_head
+		rcs.branch = nil
+		@default_branch_head = nil
+	      end
+	    }
+	    if @branch_tag == nil && @head_rev.on_trunk?
+	      attic = state == 'dead'
+	      @file.adjust_attic(attic)
+	    end
+	  }
 	  @head_rev = next_rev
 	  @state = state
 	  return @head_rev

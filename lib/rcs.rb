@@ -88,9 +88,9 @@ class RCS
 
   end
 
-  def initialize
+  def initialize(desc='')
     @admin_phrase = {}
-    @desc = ''
+    @desc = desc
     @delta = {}
     @branch2head = {}
 
@@ -99,8 +99,17 @@ class RCS
     @symbols = []
     @locks = []
   end
-  attr_reader :admin_phrase
-  attr_accessor :desc, :head, :branch, :symbols, :locks
+  attr_reader :admin_phrase, :desc
+  attr_accessor :head, :branch, :symbols, :locks
+
+  def desc=(str)
+    @desc = str
+    @desc += "\n" if /[^\n]\z/ =~ str
+  end
+
+  def attic?
+    return @delta[@head].state == 'dead'
+  end
 
   def [](rev)
     return @delta[rev]
@@ -292,14 +301,14 @@ class RCS
       d.text = contents
       if @head
 	prevdelta = @delta[prevrev]
-	prevcontents = checkout(prevrev)
+	prevcontents, mtime = checkout(prevrev)
 	prevdelta.text = RCS.diff(contents, prevcontents)
 	prevdelta.prevrev = rev
       end
       @head = rev
     else
       prevdelta = @delta[prevrev]
-      prevcontents = checkout(prevrev)
+      prevcontents, mtime = checkout(prevrev)
       if prevrev == rev.origin
 	prevdelta.branches << rev
       else
@@ -328,8 +337,13 @@ class RCS
       @text = nil
     end
     attr_reader :rev, :delta_phrase, :deltatext_phrase
-    attr_accessor :num, :prevrev
-    attr_accessor :date, :author, :state, :branches, :nextrev, :log, :text
+    attr_accessor :num, :prevrev, :log
+    attr_accessor :date, :author, :state, :branches, :nextrev, :text
+
+    def log=(str)
+      @log = str
+      @log += "\n" if /[^\n]\z/ =~ str
+    end
 
     def dump_delta(out)
       hash = @delta_phrase
