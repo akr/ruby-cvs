@@ -1,0 +1,263 @@
+#!/usr/local/bin/ruby
+
+# repbrowse is a CGI program which browse CVS repository like ViewCVS or cvsweb.
+
+require 'cvs'
+require 'cgi'
+
+class CGIBuffer
+  def initialize(cgi)
+    @cgi = cgi
+    @buf = []
+    @options = {'type' => 'text/html'}
+  end
+
+  def [](k)
+    return @options[k]
+  end
+
+  def []=(k, v)
+    @options[k] = v
+  end
+
+  def print(*ss)
+    @buf.concat(ss)
+  end
+
+  def catch
+    begin
+      yield self
+    rescue
+      ex = $!
+      @cgi.print @cgi.header('text/plain')
+      @cgi.print ex.to_s, "\n"
+      ex.backtrace.each {|s|
+        @cgi.print s, "\n"
+      }
+      @cgi.print "\n"
+      @buf.each {|s| @cgi.print s}
+      return
+    end
+
+    @cgi.print @cgi.header(@options)
+    @buf.each {|s| @cgi.print s}
+  end
+
+  def dtd
+    print "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n"
+  end
+
+  def element(tag, attr={})
+    print "<#{tag}"
+    attr.each {|k, v|
+      print " #{k}=\"#{CGI::escapeHTML(v)}\""
+    }
+    print " /" unless block_given?
+    print ">"
+    yield if block_given?
+    print "</#{tag}>\n" if block_given?
+  end
+end
+
+class RepBrowse
+  CVSROOT_LIST = [
+    ['main', '/home/akr/.cvsroot'],
+    ['cvsroot2', '/home/akr/.cvsroot2'],
+  ]
+
+  StickyParameter = {
+    'cvsroot' => CVSROOT_LIST[0][0],
+    'hideattic' => nil,
+    'sortby' => nil,
+    'logsort' => nil,
+    'diff_format' => nil,
+    'only_with_tag' => nil,
+  }
+
+  def initialize
+    @cgi = CGI.new
+    @cgibuffer = CGIBuffer.new(@cgi)
+  end
+
+  def error(msg)
+    @cgi.out("text/plain") {msg}
+    exit 0
+  end
+
+  def init_cvsroot
+    d = @cgi['cvsroot']
+    if d.empty?
+      cvsroot = CVSROOT_LIST[0][1]
+    elsif (d = CVSROOT_LIST.assoc(d[0]))
+      cvsroot = d[1]
+    else
+      error("unknown cvsroot")
+    end
+    @cvsroot = CVS.create(cvsroot)
+
+
+    path_info = (@cgi.path_info || '/')
+    path = []
+    path_info.scan(/[^\/]+/) {|name|
+      next if name == '.' || name == '..'
+      path << name
+    }
+
+    @cvsdir = @cvsroot.top_dir
+    @cvsfile = nil
+    if path_info =~ /\/\z/
+      path.each {|name| @cvsdir = @cvsdir.simple_dir(name)}
+    else
+      path[0..-2].each {|name| @cvsdir = @cvsdir.simple_dir(name)}
+      @cvsfile = @cvsdir.simple_file(path[-1])
+    end
+  end
+
+  def init_url
+    @url_base = @cgi.script_name
+    @url_params = {}
+    StickyParameter.each {|k,v|
+      if @cgi.has_key? k
+	@url_params[k] = @cgi[k][0]
+      else
+	@url_params[k] = v
+      end
+    }
+  end
+
+  def url(path_info, params_diff={})
+    params = @url_params.dup
+    params_diff.each {|k,v|
+      if v == nil
+        params.delete(k)
+      else
+        params[k] = v
+      end
+    }
+    StickyParameter.each {|k,v|
+      params.delete(k) if params[k] == v
+    }
+
+    result = @url_base.dup
+    if path_info
+      result << '/' << path_info
+    end
+    unless params.empty?
+      result << '?' << params.keys.sort.collect {|k|
+                         "#{k}=#{CGI::escape(params[k])}"
+		       }.join('&')
+    end
+    return result
+  end
+
+  def main
+    @cgibuffer.catch {
+      init_cvsroot
+      init_url
+
+      if @cvsfile
+	view_log
+      else
+	view_directory
+      end
+    }
+  end
+
+  class ViewLogVisitor < CVS::Visitor
+    def initialize(cgibuffer)
+      @cgibuffer = cgibuffer
+    end
+
+    def delta_rlog(rev, locked_by, date, author, state, add, del, branches,
+                   message)
+      @cgibuffer.element('dt') {@cgibuffer.print rev.to_s}
+      @cgibuffer.element('dd') {
+	@cgibuffer.print CGI::escapeHTML(
+	  [date, author, state, add, del, branches.collect {|r| r.to_s},
+	   message].inspect), "\n"
+      }
+    end
+  end
+
+  def view_log
+    @cgibuffer.dtd
+    @cgibuffer.element('html') {
+      @cgibuffer.element('head') {
+	@cgibuffer.element('title') {
+	  @cgibuffer.print 'file'
+	}
+      }
+      @cgibuffer.element('body') {
+	@cgibuffer.element('dl') {
+	  @cvsfile.parse_log(ViewLogVisitor.new(@cgibuffer))
+	}
+      }
+    }
+  end
+
+  def view_directory
+    @cgibuffer.dtd
+    @cgibuffer.element('html') {
+      @cgibuffer.element('head') {
+	@cgibuffer.element('title') {
+	  @cgibuffer.print 'directory'
+	}
+      }
+      @cgibuffer.element('body') {
+	unless (listdir = @cvsdir.listdir).empty?
+	  listdir.sort! {|a,b| a.path <=> b.path}
+	  @cgibuffer.element('h2') { @cgibuffer.print "directory" }
+	  @cgibuffer.element('ul') {
+	    listdir.each {|subdir|
+	      @cgibuffer.element('li') {
+		@cgibuffer.element('a',
+		  {'href'=>url(subdir.path + '/')}) {
+		  @cgibuffer.print subdir.path
+		}
+	      }
+	    }
+	  }
+	end
+	unless (listfile = @cvsdir.listfile).empty?
+	  listfile.sort! {|a,b| a.name <=> b.name}
+	  @cgibuffer.element('h2') { @cgibuffer.print "file" }
+	  @cgibuffer.element('ul') {
+	    listfile.each {|file|
+	      @cgibuffer.element('li') {
+		@cgibuffer.element('a',
+		  {'href'=>url(file.dir.path + '/' + file.name)}) {
+		  @cgibuffer.print file.dir.path + '/' + file.name
+		}
+	      }
+	    }
+	  }
+	end
+      }
+    }
+  end
+
+  def list_repository
+    @cgibuffer.dtd
+    @cgibuffer.element('html') {
+      @cgibuffer.element('head') {
+	@cgibuffer.element('title') {
+	  @cgibuffer.print 'repository list'
+	}
+      }
+      @cgibuffer.element('body') {
+	@cgibuffer.element('ul') {
+	  CVSROOT_LIST.each {|name, *rest|
+	    @cgibuffer.element('li') {
+	      @cgibuffer.element('a', {'href'=>url(nil, {'cvsroot'=>name})}) {
+		@cgibuffer.print name
+	      }
+	    }
+	  }
+	}
+      }
+    }
+  end
+
+end
+
+RepBrowse.new.main
