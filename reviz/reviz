@@ -147,6 +147,8 @@ class ReViz
   end
 
   def view_directory
+    files = []
+    @cvsdir.parse_log(ViewDirectoryVisitor.new(self, @cvsdir, files))
     return RSP.load("#{RSP_DIR}/view_directory.rsp").new(
       RSP[
         :directory =>
@@ -154,12 +156,26 @@ class ReViz
 	    RSP[
 	      :name => subdir.path,
 	      :url => url(subdir.path + '/')]},
-        :file =>
-	  @cvsdir.listfile.sort {|a,b| a.path <=> b.path}.collect {|file|
-	    RSP[
-	      :name => file.path,
-	      :url => url(file.path)]}
+        :file => files
       ]).gen
+  end
+  class ViewDirectoryVisitor < CVS::Visitor
+    def initialize(reviz, cvsdir, files)
+      @reviz = reviz
+      @cvsdir = cvsdir
+      @files = files
+    end
+
+    def rcsfile_splitted(dir, file, attic)
+      @cvsfile = @cvsdir.file(file, attic)
+    end
+
+    def finished(buf)
+      @files << RSP[
+        :name => @cvsfile.path,
+	:url => @reviz.url(@cvsfile.path)
+      ]
+    end
   end
 
   def view_log
