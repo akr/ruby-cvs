@@ -407,7 +407,7 @@ class CVS
       end
 
       def checkout(rev)
-	mtime, contents = parse_rcs(DeltaFilter.new(Checkout2Visitor.new(rev)) {
+	mtime, contents = parse_rcs(DeltaFilter.new(CheckoutVisitor.new(rev)) {
 	  |diffroot, difftree, editroot, edittree, editleaf|
 	  revs = {}
 	  r = rev
@@ -420,7 +420,7 @@ class CVS
 	yield contents, Attr.new(mtime, mode)
       end
 
-      class Checkout2Visitor < Visitor
+      class CheckoutVisitor < Visitor
 	def initialize(rev)
 	  @rev = rev
 	  @text = nil
