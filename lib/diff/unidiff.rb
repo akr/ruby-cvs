@@ -49,19 +49,21 @@ class Diff
 	      hunk_tail += add.length
 	    else
 	      i = 0
-	      while hunk_tail < context_lines
-		hunk << ' ' + add[i]
-		l1 += 1
-		l2 += 1
-		hunk_tail += 1
-		i += 1
-	      end
-	      hunk[-1] += "\n\\ No newline at end of file\n" if /\n\z/ !~ hunk[-1]
+              if hunk_tail != hunk.length
+                while hunk_tail < context_lines
+                  hunk << ' ' + add[i]
+                  l1 += 1
+                  l2 += 1
+                  hunk_tail += 1
+                  i += 1
+                end
+                hunk[-1] += "\n\\ No newline at end of file\n" if /\n\z/ !~ hunk[-1]
 
-	      out << unidiff_hunk_header(hunk_l1, l1 - hunk_l1, hunk_l2, l2 - hunk_l1)
-	      h = hunk.length - (hunk_tail - context_lines)
-	      (0...h).each {|j| out << hunk[j]}
-	      hunk[0, h] = []
+                out << unidiff_hunk_header(hunk_l1, l1 - hunk_l1, hunk_l2, l2 - hunk_l1)
+                h = hunk.length - (hunk_tail - context_lines)
+                (0...h).each {|j| out << hunk[j]}
+                hunk[0, h] = []
+              end
 
 	      l1 += add.length - i
 	      l2 += add.length - i
