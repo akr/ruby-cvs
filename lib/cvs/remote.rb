@@ -66,7 +66,7 @@ class CVS
 	Process.waitpid(pid, nil)
 	status = $?
 	if block_given?
-	  return yield status
+	  return yield(status)
 	else
 	  return status
 	end
@@ -76,7 +76,7 @@ class CVS
         status = run_cvs_raw(args, out, err, env)
 	raise CVSCommandFailure.new(status) if status != 0
 	if block_given?
-	  return yield status
+	  return yield(status)
 	else
 	  return status
 	end
