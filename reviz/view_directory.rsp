@@ -7,18 +7,18 @@
 <%unless directory.empty?%>
 <h2>directory</h2>
 <ul>
-<%directory.each {|d| with(d) {
+<%directory.each_with {
 %><li><a href="<%=url%>"><%=name%></a></li>
-<%}}
+<%}
 %></ul>
 <%end%>
 
 <%unless file.empty?%>
 <h2>file</h2>
 <ul>
-<%file.each {|f| with(f) {
+<%file.each_with {
 %><li><a href="<%=url%>"><%=name%></a></li>
-<%}}
+<%}
 %></ul>
 <%end%>
 

@@ -9,7 +9,7 @@
 r1l = rev1len
 r2l = rev2len
 al = authorlen
-lines.each {|line| with(line) {
+lines.each_with {
 %><%=date1.strftime('%Y/%m/%d')
 %> <%=rev1.to_s.ljust(r1l)
 %> <%=CGI::escapeHTML author.center(al)
@@ -19,7 +19,7 @@ lines.each {|line| with(line) {
 %><%if nonewline%>
 no newline at last
 <%end
-%><%}}%>
+%><%}%>
 </pre>
 </body>
 </html>

@@ -4,7 +4,7 @@
 </head>
 <body>
 
-<%logs.each {|log| with(log) {
+<%logs.each_with {
 %><p>
 <a name="#rev<%=rev%>"></a>
 <%tags.each {|tag|
@@ -16,7 +16,7 @@
 </p>
 <pre><%=CGI::escapeHTML message%></pre>
 <hr>
-<%}}%>
+<%}%>
 
 </body>
 </html>

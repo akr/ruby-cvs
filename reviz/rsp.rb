@@ -21,14 +21,20 @@
   </head>
   <body>
   <dl>
-  <%each {|rsp| with(rsp) {%>
+  <%each_with {%>
   <dt><%=CGI::escapeHTML key%></dt>
   <dd><%=CGI::escapeHTML value%></dd>
-  <%}}%>
+  <%}%>
   </dl>
   </body>
   </html>
 =end
+
+class Array
+  def each_with(&block)
+    each {|v| v.instance_eval(&block)}
+  end
+end
 
 class RSP
   def RSP.compile_file(filename)
@@ -73,14 +79,8 @@ end
 def method_missing(msg_id, *args, &block)
   @obj.send(msg_id, *args, &block)
 end
-def with(obj)
-  save = @obj
-  begin
-    @obj = obj
-    yield
-  ensure
-    @obj = save
-  end
+def with(obj, &block)
+  obj.instance_eval(&block)
 end
 def gen
   buf = RSP::StringBuffer.new
