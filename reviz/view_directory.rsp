@@ -53,6 +53,63 @@ end
 </tr>
 <%}
 %></table>
+<hr>
+<%if branch_tags.length + vendor_tags.length + special_tags.length + nonbranch_tags.length > 2%>
+<form method="GET" action="./">
+Show only files with tag:
+<select name="only_with_tag">
+<%unless branch_tags.empty?
+%><optgroup label="- Branch Tags -">
+<option value="">- Branch Tags -</option>
+<%branch_tags.each {|tag, url|
+%><option><%=CGI::escapeHTML tag%></option>
+<%}
+%></optgroup>
+<%end
+
+%><%unless vendor_tags.empty?
+%><option value="">- Vendor Branch Tags -</option>
+<%vendor_tags.each {|tag, url|
+%><option><%=CGI::escapeHTML tag%></option>
+<%}
+%><%end
+
+%><%unless special_tags.empty?
+%><option value="">- Special Tags -</option>
+<%special_tags.each {|tag, url|
+%><option><%=CGI::escapeHTML tag%></option>
+<%}
+%><%end
+
+%><%unless nonbranch_tags.empty?
+%><option value="">- Non-branch Tags -</option>
+<%nonbranch_tags.each {|tag, url|
+%><option><%=CGI::escapeHTML tag%></option>
+<%}
+%><%end
+
+%></select>
+<input type=submit value="Go">
+</form>
+<hr>
+<%end%>
+Branch Tags: <%branch_tags.each {|tag, url|
+%><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML tag%></a>
+<%}%>
+<hr>
+Vendor Branch Tags: <%vendor_tags.each {|tag, url|
+%><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML tag%></a>
+<%}%>
+<hr>
+Special Tags: <%special_tags.each {|tag, url|
+%><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML tag%></a>
+<%}%>
+<hr>
+Non-branch Tags: <%nonbranch_tags.each {|tag, url|
+%><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML tag%></a>
+<%}%>
+
+<hr>
 
 </body>
 </html>

@@ -220,11 +220,11 @@ class ReViz
 
     class All < RevFilter
       def parse_log_opts_one
-	return ['-N', '-r']
+	return ['-r']
       end
 
       def parse_log_opts_all
-	return ['-N']
+	return []
       end
 
       def update_one(rev)
@@ -238,11 +238,11 @@ class ReViz
 
     class MainTrunk < RevFilter
       def parse_log_opts_one
-	return ['-N', '-r']
+	return ['-r']
       end
 
       def parse_log_opts_all
-	return ['-N']
+	return []
       end
 
       def revision(rev)
@@ -256,7 +256,7 @@ class ReViz
 
     class Head < RevFilter
       def parse_log_opts_all
-	return ['-N', '-r']
+	return ['-r']
       end
 
       def revision(rev)
@@ -316,14 +316,14 @@ class ReViz
 
       def parse_log_opts_one
 	if @target_rev.branch?
-	  return ['-N', "-r#{@target_rev.to_s}:."]
+	  return ["-r#{@target_rev.to_s}:."]
 	else
-	  return ['-N', "-r#{@target_rev.to_s}"]
+	  return ["-r#{@target_rev.to_s}"]
 	end
       end
 
       def parse_log_opts_all?(rev)
-	return ['-N', "-r#{@target_rev.to_s}"]
+	return ["-r#{@target_rev.to_s}"]
       end
 
       def revision(rev)
@@ -337,12 +337,39 @@ class ReViz
   end
 
   def view_directory
-    filter = RevFilter.create(@cgi['only_with_tag'][0])
-    opts = filter.parse_log_opts_one
+    filter_gen = lambda { RevFilter.create(@cgi['only_with_tag'][0]) }
+    opts = filter_gen.call.parse_log_opts_one
 
+    dirtags = {}
     files = []
-    @cvsdir.parse_log(ViewDirectoryVisitor.new(self, @cvsdir, filter, files), opts)
+    @cvsdir.parse_log(ViewDirectoryVisitor.new(self, @cvsdir, filter_gen, files, dirtags), opts)
     files.sort! {|a,b| a.name <=> b.name}
+    vendor_tags = []
+    branch_tags = []
+    nonbranch_tags = []
+    special_tags = []
+    dirtags.each {|tag, types|
+      types.compact!
+      url = url(@cvsdir.path + '/', {'only_with_tag'=>tag})
+      if types.length == 1
+        case types[0]
+	when :vendor
+	  vendor_tags << [tag, url]
+	when :branch
+	  branch_tags << [tag, url]
+	when :nonbranch
+	  nonbranch_tags << [tag, url]
+	end
+      else
+	special_tags << [tag, url]
+      end
+    }
+    vendor_tags.sort! {|(a,), (b,)| b <=> a}
+    branch_tags.sort! {|(a,), (b,)| b <=> a}
+    nonbranch_tags.sort! {|(a,), (b,)| b <=> a}
+    special_tags.sort! {|(a,), (b,)| b <=> a}
+    special_tags << ['HEAD', url(@cvsdir.path + '/', {'only_with_tag'=>'HEAD'})]
+    special_tags << ['MAIN', url(@cvsdir.path + '/', {'only_with_tag'=>'MAIN'})]
     return RSP.load("#{RSP_DIR}/view_directory.rsp").new(
       RSP[
         :directory =>
@@ -351,19 +378,24 @@ class ReViz
 	      :name => File.basename(subdir.path),
 	      :path => subdir.path,
 	      :url => url(subdir.path + '/')]},
-        :file => files
+        :file => files,
+	:vendor_tags => vendor_tags,
+	:branch_tags => branch_tags,
+	:nonbranch_tags => nonbranch_tags,
+	:special_tags => special_tags
       ]).gen
   end
   class ViewDirectoryVisitor < CVS::Visitor
-    def initialize(reviz, cvsdir, filter, files)
+    def initialize(reviz, cvsdir, filter_gen, files, dirtags)
       @reviz = reviz
       @cvsdir = cvsdir
-      @filter_orig = filter
+      @filter_gen = filter_gen
       @files = files
+      @dirtags = dirtags
     end
 
     def rcsfile_splitted(dir, file, attic)
-      @filter = @filter_orig.dup
+      @filter = @filter_gen.call
       @cvsfile = @cvsdir.file(file, attic)
       @target = nil
       @date = nil
@@ -382,6 +414,14 @@ class ReViz
 
     def symbol(sym, rev)
       @filter.symbol(sym, rev)
+      @dirtags[sym] = [nil, nil, nil] unless @dirtags.include? sym
+      if rev.vendor_branch?
+        @dirtags[sym][0] = :vendor
+      elsif rev.branch?
+        @dirtags[sym][1] = :branch
+      else
+        @dirtags[sym][2] = :nonbranch
+      end
     end
 
     def delta_without_next(rev, date, author, state, branches)
