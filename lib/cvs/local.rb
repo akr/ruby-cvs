@@ -81,31 +81,7 @@ class CVS
       end
 
       def parse_raw_log(visitor, opts=[])
-	read_lock {
-	  rcs_pathnames = listfile.collect {|f| f.rcs_pathname}
-	  return if rcs_pathnames.empty?
-	  with_work {|t|
-	    r, w = IO.pipe
-	    pid = fork {
-	      STDOUT.reopen(w)
-	      File.open('/dev/null', 'w') {|f| STDERR.reopen(f)}
-	      r.close
-	      w.close
-	      Dir.chdir(t.path)
-	      command = ['rlog']
-	      command += opts
-	      command += rcs_pathnames
-	      exec *command
-	    }
-	    w.close
-	    parser = Parser::Log.new(r)
-	    until parser.eof?
-	      parser.parse(visitor)
-	    end
-	    r.close
-	    Process.waitpid(pid, 0)
-	  }
-	}
+	raise NotImplementedError.new
       end
 
       def mkdir(name)
@@ -375,27 +351,7 @@ class CVS
       end
 
       def parse_raw_log(visitor, opts=[])
-	@dir.read_lock {
-	  @dir.with_work {|t|
-	    r, w = IO.pipe
-	    pid = fork {
-	      STDOUT.reopen(w)
-	      File.open('/dev/null', 'w') {|f| STDERR.reopen(f)}
-	      r.close
-	      w.close
-	      Dir.chdir(t.path)
-	      command = ['rlog']
-	      command += opts
-	      command << rcs_pathname
-	      exec *command
-	    }
-	    w.close
-	    res = Parser::Log.new(r).parse(visitor)
-	    r.close
-	    Process.waitpid(pid, 0)
-	    return res
-	  }
-	}
+	raise NotImplementedError.new
       end
 
       def parse_log(visitor, opts=[])
