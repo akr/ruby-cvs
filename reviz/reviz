@@ -132,11 +132,11 @@ class ReViz
 
       if @cvsfile
 	if @cgi.has_key? 'rev'
-	  view_checkout(CVS::Revision.create(@cgi['rev'][0]))
+	  view_checkout(RCS::Revision.create(@cgi['rev'][0]))
 	elsif @cgi.has_key? 'annotate'
-	  view_annotate(CVS::Revision.create(@cgi['annotate'][0]))
+	  view_annotate(RCS::Revision.create(@cgi['annotate'][0]))
 	elsif @cgi.has_key?('r1') && @cgi.has_key?('r2')
-	  view_diff(CVS::Revision.create(@cgi['r1'][0]), CVS::Revision.create(@cgi['r2'][0]))
+	  view_diff(RCS::Revision.create(@cgi['r1'][0]), RCS::Revision.create(@cgi['r2'][0]))
 	else
 	  view_log
 	end
@@ -189,9 +189,9 @@ class ReViz
 	  return Head.new
 	end
 	begin
-	  rev = CVS::Revision.create(spec)
+	  rev = RCS::Revision.create(spec)
 	  return Rev.new(rev)
-	rescue CVS::Revision::RevisionError
+	rescue RCS::Revision::RevisionError
 	  return Tag.new(spec)
 	end
       when Revision
@@ -524,7 +524,7 @@ class ReViz
 	end
       end
       if @cgi.has_key? 'r1'
-        r = CVS::Revision.create(@cgi['r1'][0])
+        r = RCS::Revision.create(@cgi['r1'][0])
 	unless diff_revs.include? r
 	  diff_revs[r] = true
 	  log.diff_selected_rev = r.to_s
