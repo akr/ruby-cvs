@@ -21,7 +21,7 @@ end
 %><html>
 <head>
 <%
-  if CSS_URL
+  if css_url
 %><link rel="stylesheet" type="text/css" href="<%=CGI.escapeHTML CSS_URL%>"><%
   end
 %>
