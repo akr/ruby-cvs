@@ -1,5 +1,5 @@
 =begin
-= rsp.rb - Ruby Server Page :-)
+= rsp.rb - Ruby Server Pages :-)
 
 == Example
 === envlist.cgi:
@@ -55,7 +55,9 @@ class RSP
     code = compile_code(open(filename) {|f| f.read})
 
     begin
-      open(compiledname, 'w') {|f| f.print code}
+      tmpname = compiledname + ".#{$$}"
+      open(tmpname, 'w') {|f| f.print code}
+      File.rename(tmpname, compiledname)
     rescue Errno::EACCES
     end
 
