@@ -3,8 +3,8 @@
 ## VizTree visualize branch relations in a module.
 
 # VizTree generates a graph of branches in the format handled by `dot'
-# utility in GraphViz [http://www.research.att.com/sw/tools/graphviz/].
-# Since ImageMagick [http://www.imagemagick.org/] recognizes the format,
+# utility in GraphViz <URL:http://www.research.att.com/sw/tools/graphviz/>.
+# Since ImageMagick <URL:http://www.imagemagick.org/> recognizes the format,
 # `display' utility can handle it if `dot' and `gs' is available. 
 # (Internaly, the conversion is done through PostScript with
 # ImageMagick 5.1.1.)
@@ -22,6 +22,19 @@
 
 ## ToDo:
 # visualize trees other than branch tree: directory tree and revision tree.
+
+## Algorithm in brief:
+# for each RCS file extract ancestor-decendant relations as follows:
+#   extract all branch tags and corresponding revision number.
+#   for all branch tag T1 whose revision number is R1
+#     for all branch tag T2 whose revision number R2 is a prefix of R1
+#       T2 is ancestor of T1
+# merge ancestor-decendant relations of all RCS files as a graph G
+# sort G topologically
+# for each tag T which has one or more ancestors, select a parent tag
+#   the parent tag is one of ancestor tag which is most closest to T in
+#   topologically sorted order of G
+# tag-parent relation forms tree and it is result.
 
 require 'cvs'
 require 'getoptlong'
