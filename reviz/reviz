@@ -634,11 +634,11 @@ class ReViz
     f2.close
 
     diff = []
-    orig = CVS::RCSText.split(c1)
+    orig = RCS::Text.split(c1)
     orig.unshift nil
     orig_beg = 1
     IO.popen("diff -n #{f1.path} #{f2.path}") {|f|
-      CVS::RCSText.parse_diff(f) {|com, beg, len, adds|
+      RCS::Text.parse_diff(f) {|com, beg, len, adds|
 	if com == :del
 	  if orig_beg < beg
 	    diff << [:common, orig[orig_beg...beg]]
