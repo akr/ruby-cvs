@@ -24,32 +24,41 @@ end
 </head>
 <body>
 
+<h1><%=CGI::escapeHTML path%></h1>
+
+<hr>
+
 <table>
 <tr>
-  <th>File</th>
-  <th>Rev.</th>
-  <th>Age</th>
-  <th>Author</th>
-  <th>Last log entry</th>
+  <th class=file>File</th>
+  <th class=rev>Rev.</th>
+  <th class=age>Age</th>
+  <th class=author>Author</th>
+  <th class=log>Last log entry</th>
 </tr>
+
 <%directory.each_with {
 %><tr>
-  <td><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML name%></a></td>
+  <td class=dir><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML name%></a></td>
+  <td class=rev>&nbsp;</td>
+  <td class=age>&nbsp;</td>
+  <td class=author>&nbsp;</td>
+  <td class=log>&nbsp;</td>
 </tr>
 <%}
 %>
 
 <%file.each_with {
 %><tr>
-  <td><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML name%></a><%
+  <td class=file><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML name%></a><%
   if removed
 %> (removed)<%
   end
 %></td>
-  <td><a href="<%=CGI::escapeHTML rev_url%>"><%=rev%></a></td>
-  <td><%=age(date)%></td>
-  <td><%=CGI::escapeHTML author%></td>
-  <td><%=CGI::escapeHTML message%></td>
+  <td class=rev><a href="<%=CGI::escapeHTML rev_url%>"><%=rev%></a></td>
+  <td class=age><%=age(date)%></td>
+  <td class=author><%=CGI::escapeHTML author%></td>
+  <td class=log><%=CGI::escapeHTML message%></td>
 </tr>
 <%}
 %></table>

@@ -401,6 +401,7 @@ class ReViz
     special_tags << ['MAIN', url(@cvsdir, {'only_with_tag'=>'MAIN'})]
     return RSP.load("#{RSP_DIR}/view_directory.rsp").new(
       RSP[
+	:path => @cvsdir.path,
         :directory =>
 	  @cvsdir.listdir.sort {|a,b| a.path <=> b.path}.collect {|subdir|
 	    RSP[
