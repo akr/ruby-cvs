@@ -614,7 +614,7 @@ class ReViz
     f2.print c2
     f2.close
 
-    diff = IO.popen("diff -c #{f1.path} #{f2.path}") {|f| f.read || ''}
+    diff = IO.popen("diff -u #{f1.path} #{f2.path}") {|f| f.read || ''}
     return RSP.load("#{RSP_DIR}/view_diff.rsp").new(
       RSP[
 	:diff => diff
