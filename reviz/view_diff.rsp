@@ -1,0 +1,8 @@
+<html>
+<head>
+<title>diff</title>
+</head>
+<body>
+<pre><%=CGI::escapeHTML diff%></pre>
+</body>
+</html>
