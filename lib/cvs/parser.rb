@@ -638,10 +638,11 @@ class CVS
 	  match_string("\n")
 	end
 
+	visitor.delta_finished
+
 	if try {match_string("description:\n")}
 	  visitor.description(match_message)
 	end
-
 
 	while try {match_string("----------------------------\nrevision ")}
 	  m = fillbuf_regex(/\tlocked by: |\n/)

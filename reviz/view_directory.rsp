@@ -1,26 +1,55 @@
-<html>
+<%!
+Units = [
+  [1, 'second'],
+  [60, 'minute'],
+  [3600, 'hour'],
+  [86400, 'day'],
+  [604800, 'week'],
+  [2629746, 'month'], # (365 + 1 / 4.0 - 1 / 100.0 + 1 / 400.0) * 86400 / 12.0
+  [31556952, 'year'], # (365 + 1 / 4.0 - 1 / 100.0 + 1 / 400.0) * 86400
+]
+
+def age(timestamp)
+  a = Time.now - timestamp
+  prev = Units[0]
+  Units.each {|curr|
+    break if a < curr[0] * 2
+    prev = curr
+  }
+  return "#{(a / prev[0]).to_i} #{prev[1]}" 
+end
+%><html>
 <head>
 <title>directory</title>
 </head>
 <body>
 
-<%unless directory.empty?%>
-<h2>directory</h2>
-<ul>
+<table>
+<tr>
+  <th>File</th>
+  <th>Rev.</th>
+  <th>Age</th>
+  <th>Author</th>
+  <th>Last log entry</th>
+</tr>
 <%directory.each_with {
-%><li><a href="<%=url%>"><%=name%></a></li>
+%><tr>
+  <td><a href="<%=url%>"><%=CGI::escapeHTML name%></a></td>
+</tr>
 <%}
-%></ul>
-<%end%>
+%>
 
-<%unless file.empty?%>
-<h2>file</h2>
-<ul>
-<%file.each_with {
-%><li><a href="<%=url%>"><%=name%></a></li>
+<%
+file.each_with {
+%><tr>
+  <td><a href="<%=url%>"><%=CGI::escapeHTML name%></a></td>
+  <td><%=rev%></td>
+  <td><%=age(date)%></td>
+  <td><%=CGI::escapeHTML author%></td>
+  <td><%=CGI::escapeHTML message%></td>
+</tr>
 <%}
-%></ul>
-<%end%>
+%></table>
 
 </body>
 </html>

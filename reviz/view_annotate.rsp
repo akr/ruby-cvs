@@ -6,14 +6,11 @@
 
 <pre>
 <%
-r1l = rev1len
-r2l = rev2len
-al = authorlen
 lines.each_with {
 %><%=date1.strftime('%Y/%m/%d')
-%> <%=rev1.to_s.ljust(r1l)
-%> <%=CGI::escapeHTML author.center(al)
-%> <%=rev2.to_s.ljust(r2l)
+%> <%=rev1.to_s.ljust(rev1len)
+%> <%=CGI::escapeHTML author.center(authorlen)
+%> <%=rev2.to_s.ljust(rev2len)
 %> <%=date2 ? date2.strftime('%Y/%m/%d') : ' ' * 10
 %> : <%=CGI::escapeHTML contents
 %><%if nonewline%>

@@ -147,34 +147,98 @@ class ReViz
   end
 
   def view_directory
+    if @cgi.has_key? 'only_with_tag'
+      tagrev = @cgi['only_with_tag'][0]
+      opts = []
+      # Note that following options doesn't work for branches
+      # in local repository because `magic branch numbers' of cvs.
+      # opts = ['-N', "-r#{tagrev}:#{tagrev}"]
+    else
+      tagrev = nil
+      opts = ['-N', '-r']
+    end
+
     files = []
-    @cvsdir.parse_log(ViewDirectoryVisitor.new(self, @cvsdir, files))
+    @cvsdir.parse_log(ViewDirectoryVisitor.new(self, @cvsdir, tagrev, files), opts)
+    files.sort! {|a,b| a.name <=> b.name}
     return RSP.load("#{RSP_DIR}/view_directory.rsp").new(
       RSP[
         :directory =>
 	  @cvsdir.listdir.sort {|a,b| a.path <=> b.path}.collect {|subdir|
 	    RSP[
-	      :name => subdir.path,
+	      :name => File.basename(subdir.path),
+	      :path => subdir.path,
 	      :url => url(subdir.path + '/')]},
         :file => files
       ]).gen
   end
   class ViewDirectoryVisitor < CVS::Visitor
-    def initialize(reviz, cvsdir, files)
+    def initialize(reviz, cvsdir, tagrev, files)
       @reviz = reviz
       @cvsdir = cvsdir
       @files = files
+
+      @tag = nil
+      @rev0 = nil
+      begin
+        @rev0 = CVS::Revision.create(tagrev)
+      rescue CVS::Revision::RevisionError
+	@tag = tagrev
+      end
     end
 
     def rcsfile_splitted(dir, file, attic)
       @cvsfile = @cvsdir.file(file, attic)
+      @rev = @rev0
+      @target = nil
+      @date = nil
+      @author = nil
+      @state = nil
+      @message = nil
+    end
+
+    def branch(rev)
+      @rev = rev unless @tag || @rev
+    end
+
+    def symbol(sym, rev)
+      @rev = rev if @tag == sym
+    end
+
+    def delta_finished
+      @rev = false if @tag && !@rev
+    end
+
+    def delta_without_next(rev, date, author, state, branches)
+      if !@rev.equal?(false) && (rev == @rev || rev.on?(@rev))
+	if !@target || @target < rev
+	  @target = rev
+	  @date = date
+	  @author = author
+	  @state = state
+	end
+      end
+    end
+
+    def deltatext_log(rev, message)
+      if @target == rev
+        @message = message
+      end
     end
 
     def finished(buf)
-      @files << RSP[
-        :name => @cvsfile.path,
-	:url => @reviz.url(@cvsfile.path)
-      ]
+      if !@rev.equal?(false)
+	@files << RSP[
+	  :name => @cvsfile.name,
+	  :path => @cvsfile.path,
+	  :url => @reviz.url(@cvsfile.path),
+	  :rev => @target,
+	  :date => @date,
+	  :author => @author,
+	  :state => @state,
+	  :message => @message
+	]
+      end
     end
   end
 
@@ -215,7 +279,7 @@ class ReViz
       :annotate_url => url(@cvsfile.path, {'annotate'=>rev.to_s}),
       :date => date,
       :author => author,
-      :message => CGI::escapeHTML(message)
+      :message => message
     ]
   end
 

@@ -33,7 +33,9 @@
 
 class Array
   def each_with(&block)
-    each {|v| v.instance_eval(&block)}
+    each {|v|
+      eval("lambda {|v, b| with(v, &b)}", block).call(v, block)
+    }
   end
 end
 
@@ -73,17 +75,9 @@ class RSP
   end
 
   def RSP.compile_code(template)
-    result = StringBuffer.new
-    result << <<'End'
-Class.new.class_eval {
-def initialize(obj)
-  @obj = obj
-end
-def gen
-  buf = RSP::StringBuffer.new
-  @obj.instance_eval {
-#------------------------------------------------------------
-End
+    class_code = StringBuffer.new
+    gen_body = StringBuffer.new
+
     state = :contents
     linenumber = 1
     line_open = nil
@@ -97,7 +91,7 @@ End
         when '%>'
 	  raise RSPError.new("#{linenumber}: unmatched '%>'")
 	else
-	  result << 'buf << ' << data.dump << "\n"
+	  gen_body << 'buf << ' << data.dump << "\n"
 	  data.tr!("^\n", '')
 	  linenumber += data.length
 	end
@@ -109,34 +103,56 @@ End
 	  state = :contents
 	  line_open = nil
 	else
-	  result << compile_fragment(data)
-	  data.tr!("^\n", '')
-	  linenumber += data.length
+	  case data
+	  when /\A!/
+	    class_code << $' << "\n"
+	  when /\A=/
+	    gen_body << "buf << (#{$'}).to_s\n"
+	  when /\A#/
+	  else
+	    gen_body << data << "\n"
+	  end
+	  linenumber += data.tr("^\n", '').length
 	end
       end
     }
     raise RSPError.new("#{line_open}: non-terminated Ruby code") if state != :contents
-    result << <<'End'
-#------------------------------------------------------------
+
+    return <<"End"
+Class.new.class_eval {
+def initialize(obj)
+  @objs = [obj]
+end
+
+def method_missing(msg_id, *args, &block)
+  @objs.reverse_each {|obj|
+    return obj.send(msg_id, *args, &block) if obj.respond_to?(msg_id)
   }
+  raise StandardError.new("method `\#{msg_id}' not found")
+end
+
+def with(obj)
+  begin
+    @objs.push(obj)
+    yield
+  ensure
+    @objs.pop
+  end
+end
+
+#{class_code}
+def gen
+  buf = RSP::StringBuffer.new
+#------------------------------------------------------------
+#{gen_body}
+#------------------------------------------------------------
   return buf.to_s
 end
 self
 }
 End
-    return result.to_s
   end
   class RSPError < StandardError
-  end
-
-  def RSP.compile_fragment(frag)
-    case frag
-    when /\A=/
-      "buf << (#{$'}).to_s\n"
-    when /\A#/
-    else
-      frag + "\n"
-    end
   end
 
   def RSP.[](hash)
@@ -145,10 +161,6 @@ End
 
   def initialize(hash={})
     @hash = hash.dup
-  end
-
-  def with(obj, &block)
-    obj.instance_eval(&block)
   end
 
   def method_missing(sym, *args)
@@ -160,6 +172,11 @@ End
       raise ArgumentError.new("#{sym} not found")
     end
   end
+
+  def respond_to?(name, priv=false)
+    return @hash.include?(name) || super(name, priv)
+  end
+
 
   class StringBuffer
     def initialize
