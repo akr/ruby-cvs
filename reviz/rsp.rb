@@ -136,12 +136,12 @@ end
 
 #{class_code}
 def gen
-  hash = {}
-  buf = []
+  rsp_hash = {}
+  rsp_buf = []
 #------------------------------------------------------------
 #{gen_body}
 #------------------------------------------------------------
-  return buf.join
+  return rsp_buf.join
 end
 if __FILE__ != $0
   self
@@ -177,9 +177,9 @@ End
       when :contents
 	case data
         when '<%%'
-	  gen_body << 'buf << ' << register_string(class_code, strhash, '<%') << "\n"
+	  gen_body << 'rsp_buf << ' << register_string(class_code, strhash, '<%') << "\n"
         when '%%>'
-	  gen_body << 'buf << ' << register_string(class_code, strhash, '%>') << "\n"
+	  gen_body << 'rsp_buf << ' << register_string(class_code, strhash, '%>') << "\n"
         when '<%'
 	  state = :code
 	  line_open = linenumber
@@ -188,7 +188,7 @@ End
 	when ''
 	  # ignore empty string.
 	else
-	  gen_body << 'buf << ' << register_string(class_code, strhash, data) << "\n"
+	  gen_body << 'rsp_buf << ' << register_string(class_code, strhash, data) << "\n"
 	  linenumber += data.tr("^\n", '').length
 	end
       when :code
@@ -205,7 +205,7 @@ End
 	  when /\A!/
 	    class_code << $' << "\n"
 	  when /\A=/
-	    gen_body << "buf << hash.fetch((#{$'}).to_s) {|str| hash[str] = str}\n"
+	    gen_body << "rsp_buf << rsp_hash.fetch((#{$'}).to_s) {|str| rsp_hash[str] = str}\n"
 	  when /\A@\s*/
 	    data = $'
 	    case data
