@@ -12,18 +12,6 @@ class CVS
       return D.new(self, '.')
     end
 
-    def dir(name)
-      return top_dir.dir(name)
-    end
-
-    def file(name, attic=nil)
-      if /\/([^\/]*)\z/ =~ name
-	return dir($`).file($1, attic)
-      else
-	return dir('.').file($1, attic)
-      end
-    end
-
     class WorkDir < DelegateClass(TempDir)
       def initialize(dir)
 	@dir = dir
@@ -105,22 +93,6 @@ class CVS
 
       def simple_file(name, attic=nil)
 	return F.new(self, name, attic)
-      end
-
-      def dir(name)
-	if /\// =~ name
-	  return simple_dir($`).dir($')
-	else
-	  return simple_dir(name)
-	end
-      end
-
-      def file(name, attic=nil)
-	if /\/([^\/]*)\z/ =~ name
-	  return dir($`).file($1, attic)
-	else
-	  return simple_file(name, attic)
-	end
       end
 
       def listdir
@@ -236,8 +208,7 @@ class CVS
 	        ',g=' + modes[(s.mode & 0070) >> 3] +
 	        ',o=' + modes[(s.mode & 0007)]
 	  mtime = s.mtime.gmtime
-	  f = wd.open(@name)
-	  yield f, Attr.new(mtime, mode)
+	  yield wd.open(@name) {|f| [f.read, Attr.new(mtime, mode)]}
 	}
       end
 
@@ -315,7 +286,7 @@ class CVS
 	end
       end
 
-      class Head
+      class Head < CVS::F::Head
         def initialize(file, branch_tag, branch_rev, head_rev, state)
 	  @file = file
 	  @branch_tag = branch_tag

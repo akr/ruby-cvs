@@ -236,8 +236,10 @@ class CVS
       def parse(visitor)
 	visitor.admin(parse_phrases(visitor, @admin_phrase_parser))
 	nil while parse_delta(visitor)
+	visitor.delta_finished
 	parse_desc(visitor)
 	nil while parse_deltatext(visitor)
+	return visitor.finished
       end
 
       def parse_delta(visitor)
@@ -528,7 +530,8 @@ class CVS
 	end
 
 	def delta(rev, hash)
-	  @visitor.delta(rev, hash)
+	  @visitor.delta_rcs(rev, hash)
+	  rev = Revision.create(rev)
 	  date = hash['date']
 	  if /\A(\d+)\.(\d+)\.(\d+)\.(\d+)\.(\d+)\.(\d+)\z/ =~ date
 	    y = $1.to_i
@@ -539,17 +542,25 @@ class CVS
 	  end
 	  branches = hash['branches'].collect {|r| Revision.create(r)}
 	  @visitor.delta_without_next(
-	    Revision.create(rev),
+	    rev,
 	    date,
 	    hash['author'],
 	    hash['state'],
 	    branches)
+	  @visitor.delta(
+	    rev,
+	    date,
+	    hash['author'],
+	    hash['state'],
+	    branches,
+	    Revision.create(hash['next']))
 	end
 
 	def deltatext(rev, log, hash, text)
-	  @visitor.deltatext(rev, log, hash, text)
+	  @visitor.deltatext_rcs(rev, log, hash, text)
 	  rev = Revision.create(rev)
 	  @visitor.deltatext_log(rev, log)
+	  @visitor.deltatext(rev, log, text)
 	end
 
 	class LogDateFormatError < StandardError

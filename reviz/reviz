@@ -344,11 +344,11 @@ class ReViz
 	@cvsfile.parse_log(ViewLogVisitor.new {|args|
 	  print_log(*args)
 	}, ["-r#{rev.to_s}"])
-	@cvsfile.checkout(rev) {|f, a|
+	@cvsfile.checkout(rev) {|contents, a|
 	  @cgibuffer.element('p') {@cgibuffer.print CGI::escapeHTML(a.inspect)}
 	  @cgibuffer.element('hr')
 	  @cgibuffer.element('pre') {
-	    @cgibuffer.print CGI::escapeHTML(f.read)
+	    @cgibuffer.print CGI::escapeHTML(contents)
 	  }
 	}
       }

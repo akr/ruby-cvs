@@ -53,7 +53,7 @@ class CVS
         Dir.foreach(dir) {|name|
 	  next if /\A(\.|\.\.|CVS|Attic)\z/ =~ name
 	  if /,v\z/ =~ name && FileTest.file?(dir + '/' + name)
-	    res << simple_file($`)
+	    res << simple_file($`, false)
 	  end
 	}
 	dir += '/Attic'
@@ -313,17 +313,20 @@ class CVS
 	}
       end
 
-      def checkout(rev)
-	t = TempDir.create
+      def mode
 	s = File.stat(rcs_pathname)
 	modes = ['', 'x', 'w', 'wx', 'r', 'rx', 'rw', 'rwx']
 	m = s.mode & 0555 
 	# Since RCS files doesn't record a `write' permission,
 	# we assume it is identical to the corresponding `read' permission.
 	m |= (s.mode & 0444) >> 1
-	mode = 'u=' + modes[(m & 0700) >> 6] +
+	return 'u=' + modes[(m & 0700) >> 6] +
 	      ',g=' + modes[(m & 0070) >> 3] +
 	      ',o=' + modes[(m & 0007)]
+      end
+
+      def checkout(rev)
+	t = TempDir.create
 	pid = fork {
 	  open('/dev/null', 'w') {|f| STDOUT.reopen(f)}
 	  open('/dev/null', 'w') {|f| STDERR.reopen(f)}
@@ -336,14 +339,286 @@ class CVS
 	}
 	Process.waitpid(pid, 0)
 	raise CheckOutCommandFailure.new($?) if $? != 0
-	f = t.open(@name)
-	s = f.stat
-	mtime = s.mtime.gmtime
-	yield f, Attr.new(mtime, mode)
+	yield t.open(@name) {|f| [f.read, Attr.new(f.stat.mtime.gmtime, mode)]}
       end
       class CheckInCommandFailure < StandardError
 	def initialize(status)
 	  super("status: #{status}")
+	end
+      end
+
+      def checkout2(rev)
+	time, contents = parse_rcs(DeltaVisitor.new(rev, Checkout2Visitor.new(rev)))
+	yield contents, Attr.new(time, mode)
+      end
+
+      class Checkout2Visitor < Visitor
+	def initialize(rev)
+	  @rev = rev
+	  @text = nil
+	end
+
+        def delta(phase, rev, date, author, state, branch, nextrev)
+	  if rev == @rev
+	    @date = date
+	    @author = author
+	    @state = state
+	  end
+	end
+
+        def deltatext(phase, rev, log, text)
+	  case phase
+	  when :trunk_after
+	    if @text == nil
+	      @text = RCSText.new(text)
+	    else
+	      @text = @text.patch(text)
+	    end
+	  when :branch_before
+	    @text = @text.patch(text)
+	  end
+	end
+
+	def finished
+	  return @date, @text.to_s
+	end
+      end
+
+      def annotate(rev, &block)
+	parse_rcs(DeltaVisitor.new(rev, AnnotateVisitor.new(rev)))
+      end
+
+      class AnnotateVisitor < Visitor
+	def initialize(target)
+	  @target = target
+	  @minrev = nil
+	  @maxrev = nil
+	  @diffsrc = {}
+	  @trunk_text = nil
+	  @branch_text = nil
+	  @target_text = nil
+	end
+
+        def delta(phase, rev, date, author, state, branch, nextrev)
+	  #p [phase, rev.to_s, date, author, state, branch.collect {|r| r.to_s}, nextrev.to_s]
+	  @diffsrc[nextrev] = rev if nextrev
+	  branch.each {|r| @diffsrc[r] = rev}
+	  @minrev = rev if !@minrev || rev < @minrev
+	  @maxrev = rev if !@maxrev || @maxrev < rev
+	end
+
+        def deltatext(phase, rev, log, text)
+	  #p [phase, rev.to_s, log, text]
+	  case phase
+	  when :trunk_after
+	    if @trunk_text == nil
+	      @trunk_text = RCSText.new(text,
+	        lambda {|line|
+		  line = Line.new(line)
+		  line.rev2 = rev if @target.on_trunk?
+		  line
+		})
+	    else
+	      @trunk_text.patch!(text,
+	        lambda {|line|
+		  line = Line.new(line)
+		  line.rev2 = rev if @target.on_trunk?
+		  line
+		},
+		lambda {|line| line.rev1 = @diffsrc[rev]})
+	    end
+	  when :trunk_before
+	    @branch_text = @trunk_text.dup unless @branch_text
+	    @trunk_text.patch!(text,
+	      lambda {|line| false},
+	      lambda {|line| line.rev1 = @diffsrc[rev] if line})
+	  when :branch_before
+	    @branch_text = @trunk_text.dup unless @branch_text
+	    @branch_text.patch!(text,
+	      lambda {|line|
+	        line = Line.new(line)
+		line.rev1 = rev
+		line
+	      },
+	      lambda {|line| line.rev2 = @diffsrc[rev]})
+	  when :branch_after
+	    @branch_text.patch!(text,
+	      lambda {|line| false},
+	      lambda {|line| line.rev2 = @diffsrc[rev] if line})
+	  end
+	  if rev == @target
+	    if @target.on_trunk?
+	      @target_text = @trunk_text.dup
+	    else
+	      @target_text = @branch_text.dup
+	    end
+	  end
+	end
+
+	def finished
+	  unless @target_text
+	    @target_text = @target.on_trunk? ? @trunk_text : @branch_text
+	  end
+	  @target_text.lines.each {|line|
+	    line.rev1 = @minrev if line.rev1 == nil
+	    line.rev2 = @maxrev if line.rev2 == nil
+	  }
+	  # xxxx
+	  @target_text.lines.each {|l|
+	    print "#{l.rev1.to_s}-#{l.rev2.to_s} #{l.line}"
+	  }
+	end
+
+	class Line
+	  def initialize(line)
+	    @line = line
+	    @rev1 = nil
+	    @rev2 = nil
+	  end
+	  attr_reader :line
+	  attr_accessor :rev1, :rev2
+	end
+      end
+
+      class RCSText
+        def initialize(text, annotate=nil)
+	  text = split(text) if String === text
+	  text.collect! {|line| annotate.call(line)} if annotate
+	  @text = text
+	end
+
+	def lines
+	  return @text
+	end
+
+	def to_s
+	  return @text.join('')
+	end
+
+	def split(str)
+	  a = []
+	  str.each_line("\n") {|l| a << l}
+	  return a
+	end
+
+	def patch!(diff, annotate_add=nil, annotate_del=nil)
+	  diff = split(diff) if String === diff
+	  text = @text.dup
+	  text.unshift(nil) # adjust array index as line number.
+	  i = 0
+	  while i < diff.length
+	    case diff[i]
+	    when /\Aa(\d+)\s+(\d+)/
+	      beg = $1.to_i
+	      len = $2.to_i
+	      adds = diff[i+1,len]
+	      adds.collect! {|line| annotate_add.call(line)} if annotate_add
+	      text[beg] = [text[beg], adds]
+	      i += len + 1
+	    when /\Ad(\d+)\s+(\d+)/
+	      beg = $1.to_i
+	      len = $2.to_i
+	      text[beg, len].each {|line| annotate_del.call(line)} if annotate_del
+	      text.fill(nil, beg, len)
+	      i += 1
+	    else
+	      raise InvalidDiffFormat.new(diff[i])
+	    end
+	  end
+	  text.flatten!
+	  text.compact!
+	  @text = text
+	  return self
+	end
+
+	def patch(diff, annotate_add=nil, annotate_del=nil)
+	  return self.dup.patch!(diff, annotate_add, annotate_del)
+	end
+
+	class InvalidDiffFormat < StandardError
+	end
+      end
+
+      class DeltaVisitor < Visitor
+        def initialize(target, visitor)
+	  @visitor = visitor
+	  @target = target
+	  @target_branch = target.branch
+
+	  @branch = []
+	  @origin = []
+	  until target.on_trunk?
+	    @origin << target
+	    @branch << target.branch
+	    target = target.origin
+	  end
+
+	  @trunk_target = target
+
+	  @track_trunk_after = true
+	  @track_trunk_before = false
+	  @track_branch_after = false
+	  @track_branch_before = false
+	  @branch_level = @branch.length - 1
+	end
+
+	def delta(rev, *args)
+	  track_delta(rev, :delta, args)
+	end
+
+	def delta_finished
+	  @track_trunk_after = true
+	  @track_trunk_before = false
+	  @track_branch_after = false
+	  @track_branch_before = false
+	  @branch_level = @branch.length - 1
+	  @visitor.delta_finished
+	end
+
+	def finished
+	  return @visitor.finished
+	end
+
+	def deltatext(rev, *args)
+	  track_delta(rev, :deltatext, args)
+	end
+
+	def track_delta(rev, meth, args)
+	  if @track_branch_after
+	    if rev.on?(@target_branch)
+	      @visitor.send(meth, :branch_after, rev, *args)
+	    end
+	  end
+
+	  if @track_branch_before
+	    if rev.on?(@branch[@branch_level])
+	      @visitor.send(meth, :branch_before, rev, *args)
+	      if rev == @origin[@branch_level]
+		@branch_level -= 1
+		if @branch_level < 0
+		  @track_branch_before = false
+		  @track_branch_after = true
+		end
+	      end
+	    end
+	  end
+
+	  if @track_trunk_before
+	    if rev.on_trunk?
+	      @visitor.send(meth, :trunk_before, rev, *args)
+	    end
+	  end
+
+	  if @track_trunk_after
+	    if rev.on_trunk?
+	      @visitor.send(meth, :trunk_after, rev, *args)
+	      if rev == @trunk_target
+	        @track_trunk_after = false
+	        @track_trunk_before = true
+		@track_branch_before = true if !@branch.empty?
+	      end
+	    end
+	  end
 	end
       end
 

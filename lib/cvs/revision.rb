@@ -1,5 +1,7 @@
 class CVS
   class Revision
+    include Comparable
+
     class RevisionError < StandardError
     end
     def self.create(arg)
@@ -37,27 +39,6 @@ class CVS
       result = @arr.length <=> other.arr.length
       result = @arr <=> other.arr if result == 0
       return result
-    end
-
-    def ==(other)
-      return false unless other.kind_of?(Revision)
-      return @arr == other.arr
-    end
-
-    def <(other)
-      return (self <=> other) < 0
-    end
-
-    def >(other)
-      return (self <=> other) > 0
-    end
-
-    def <=(other)
-      return (self <=> other) <= 0
-    end
-
-    def >=(other)
-      return (self <=> other) >= 0
     end
 
     def hash
@@ -119,6 +100,21 @@ class CVS
       def origin
 	raise RevisionError.new("There is no origin of a trunk revision: #{self}") if @arr.length == 2
 	return NonBranch.new(@arr[0...-2])
+      end
+
+      def ancestor?(r)
+	if r == nil
+	  return on_trunk?
+	elsif on_trunk?
+	  return r.on_trunk? && r <= self
+        elsif r.branch?
+	  return r.arr.length < @arr.length &&
+	         r.arr == @arr[0, r.arr.length]
+	else
+	  return r.arr.length <= @arr.length &&
+	         r.arr[0..-2] == @arr[0, r.arr.length - 1] &&
+		 r.arr[-1] <= @arr[r.arr.length - 1]
+	end
       end
     end
 
