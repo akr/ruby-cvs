@@ -29,8 +29,12 @@ class RCS
   end
 
   class STR < Token
+    def STR.quote(str)
+      return "@#{str.gsub(/@/, '@@')}@"
+    end
+
     def dump(out="")
-      out << "@#{@str.gsub(/@/, '@@')}@"
+      out << STR.quote(@str)
     end
   end
 
@@ -568,13 +572,13 @@ class RCS
 
       def admin_head(rev)
 	@visitor.admin_head(rev)
-        rev == nil ? nil : Revision.create(rev)
+        rev = rev && Revision.create(rev)
 	@visitor.head(rev)
       end
 
       def admin_branch(rev)
 	@visitor.admin_branch(rev)
-        rev == nil ? nil : Revision.create(rev)
+        rev = rev && Revision.create(rev)
 	@visitor.branch(rev)
       end
 
@@ -608,7 +612,11 @@ class RCS
 	  raise RCSDateFormatError.new(date)
 	end
 	y = $1.to_i
-	y += 1900 if y < 100
+	if y < 69
+	  y += 2000
+	elsif y < 100
+	  y += 1900
+	end
 	@delta_date = Time.gm(y, $2.to_i, $3.to_i, $4.to_i, $5.to_i, $6.to_i)
       end
 
@@ -628,7 +636,7 @@ class RCS
 
       def delta_next(rev)
         @visitor.delta_next(rev)
-        @delta_next = rev == nil ? nil : Revision.create(rev)
+        @delta_next = rev  && Revision.create(rev)
       end
 
       def delta_end

@@ -1,13 +1,28 @@
 require 'etc'
-require 'rcs/parser'
 require 'rcs/revision'
+require 'rcs/parser'
+require 'rcs/text'
 
 class RCS
   def RCS.parse(filename)
     rcs = RCS.new
     open(filename) {|f|
-      Parser.new(f).parse(Parser::PhraseVisitor.new(Parser::RCSVisitor.new(InitializeVisitor.new(rcs))))
+      Parser.new(f).parse(
+        Parser::PhraseVisitor.new(
+	  Parser::RCSVisitor.new(
+	    InitializeVisitor.new(rcs))))
     }
+
+    rcs.each_delta {|d|
+      rev = d.rev
+      if r = d.nextrev
+        rcs.delta[r].prevrev = rev
+      end
+      d.branches.each {|r|
+        rcs.delta[r].prevrev = rev
+      }
+    }
+
     return rcs
   end
 
@@ -15,11 +30,13 @@ class RCS
     def initialize(rcs)
       @rcs = rcs
       @delta = nil
+      @deltatextnum = 0
     end
 
-    def head(rev); @rcs.head = Phrase::Revision.new(rev); end
-    def branch(rev); @rcs.branch = Phrase::Revision.new(rev); end
-    def symbols(alist); @rcs.symbols = Phrase::Symbols.new(alist); end
+    def head(rev); @rcs.head = rev; end
+    def branch(rev); @rcs.branch = rev; end
+    def symbols(alist); @rcs.symbols = alist; end
+    def locks(alist); @rcs.locks = alist; end
 
     def delta_begin(rev)
       rev = Revision.create(rev)
@@ -27,21 +44,26 @@ class RCS
     end
 
     def delta(rev, date, author, state, branches, nextrev)
-      @delta.delta[:date] = Phrase::Date.create(Time.now)
-      @delta.delta[:author] = Phrase::Author.new(author)
-      @delta.delta[:state] = Phrase::State.new(state)
-      @delta.delta[:branches] = Phrase::RevisionList.new(branches)
-      @delta.delta[:next] = Phrase::Revision.new(nextrev)
+      @delta.date = date
+      @delta.author = author
+      @delta.state = state
+      @delta.branches = branches
+      @delta.nextrev = nextrev
     end
 
     def delta_end
       @delta = nil
     end
 
+    def deltatext_begin(rev)
+      rev = Revision.create(rev)
+      @delta = @rcs.delta[rev]
+      @delta.num = (@deltatextnum += 1)
+    end
+
     def deltatext(rev, log, text)
-      @delta = d = @rcs.delta[rev]
-      d.log = log
-      d.text = text
+      @delta.log = log
+      @delta.text = text
     end
 
     def deltatext_end
@@ -52,205 +74,212 @@ class RCS
       keyword = keyword.intern
       case state
       when :admin
-        hash = @rcs.admin
+        hash = @rcs.admin_phrase
       when :delta
-	hash = @delta.delta
+	hash = @delta.delta_phrase
       when :deltatext
-	hash = @delta.deltatext
+	hash = @delta.deltatext_phrase
       end
-      unless hash.include? keyword
-	hash[keyword] = Phrase::General.new(*words)
-      end
+      hash[keyword] = words
     end
 
   end
 
   def initialize
-    @admin = {
-      :head => Phrase::General.new(),
-      :access => Phrase::General.new(),
-      :symbols => Phrase::General.new(),
-      :locks => Phrase::General.new()
-    }
+    @admin_phrase = {}
     @desc = ''
     @delta = {}
+
+    @head = nil
+    @branch = nil
+    @symbols = []
+    @locks = []
   end
-  attr_reader :admin, :desc, :delta
+  attr_reader :admin_phrase, :desc, :delta
+  attr_accessor :head, :branch, :symbols, :locks
 
   def dump(out="")
-    @admin.each {|k, v|
-      out << k.id2name << "\t"
-      v.words.each {|w| w.dump(out); out << " "}
+    hash = @admin_phrase.dup
+
+    out << "head\t"
+    out << @head.to_s if @head
+    out << ";\n"
+    hash.delete :head
+
+    if @branch
+      out << "branch\t"
+      out << @branch.to_s
+      out << ";\n"
+    end
+    hash.delete :branch
+
+    out << "access"
+    if hash.include? :access
+      hash[:access].each {|w| out << "\n\t"; w.dump(out)}
+    end
+    out << ";\n"
+    hash.delete :access
+
+    out << "symbols"
+    @symbols.each {|sym, rev|
+      out << "\n\t" << sym << ":" << rev.to_s
+    }
+    out << ";\n"
+    hash.delete :symbols
+
+    out << "locks"
+    @locks.each {|user, rev|
+      out << "\n\t" << user << ":" << rev.to_s
+    }
+    if hash.include? :strict
+      out << "; strict"
+    end
+    out << ";\n"
+    hash.delete :locks
+    hash.delete :strict
+
+    if hash.include? :comment
+      out << "comment"
+      hash[:comment].each {|w| out << "\t"; w.dump(out)}
+      out << ";\n"
+    end
+    hash.delete :comment
+
+    if hash.include? :expand
+      out << "expand"
+      hash[:expand].each {|w| out << "\t"; w.dump(out)}
+      out << ";\n"
+    end
+    hash.delete :expand
+
+    hash.each {|keyword, words|
+      out << keyword << "\t"
+      words.each {|w| out << "\n\t"; w.dump(out)}
       out << ";\n"
     }
 
-    headrev = head.rev
+    out << "\n"
 
-    if headrev
-      each_delta(headrev) {|d|
+    if @head
+      each_delta {|d|
 	d.dump_delta(out)
       }
     end
 
-    out << "desc\n"
-    STR.new(@desc).dump(out)
+    out << "\n\ndesc\n" << STR.quote(@desc) << "\n"
 
-    if headrev
-      each_deltatext(headrev) {|d|
+    if @head
+      each_deltatext {|d|
 	d.dump_deltatext(out)
       }
     end
   end
 
-  def each_delta(rev)
+  def each_delta(rev=@head, &block)
+    d = @delta[rev]
+    yield d
+    nextrev = d.nextrev
+    each_delta(nextrev, &block) if nextrev
+    d.branches.each {|r| each_delta(r, &block)}
   end
 
-  def each_deltatext(rev)
+  def each_deltatext(rev=@head, &block)
+    d = @delta[rev]
+    yield d
+
+    revs = d.branches
+    nextrev = d.nextrev
+    revs << nextrev if nextrev
+    revs.sort! {|a, b| @delta[a].num <=> @delta[b].num}
+    revs.each {|r| each_deltatext(r, &block)}
   end
 
-  def head; return @admin[:head]; end
-  def branch; return @admin[:branch]; end
-  def access; return @admin[:access]; end
-  def symbols; return @admin[:symbols]; end
-  def locks; return @admin[:locks]; end
-  def strict; return @admin[:strict]; end
-  def comment; return @admin[:comment]; end
-  def expand; return @admin[:expand]; end
+  def checkout(rev)
+    d = @delta[rev]
+    ds = []
+    until d == nil
+      ds << d
+      d = @delta[d.prevrev]
+    end
 
-  def head=(phrase); return @admin[:head] = phrase; end
-  def branch=(phrase); return @admin[:branch] = phrase; end
-  def access=(phrase); return @admin[:access] = phrase; end
-  def symbols=(phrase); return @admin[:symbols] = phrase; end
-  def locks=(phrase); return @admin[:locks] = phrase; end
-  def strict=(phrase); return @admin[:strict] = phrase; end
-  def comment=(phrase); return @admin[:comment] = phrase; end
-  def expand=(phrase); return @admin[:expand] = phrase; end
+    t = Text.new(ds.pop.text)
+    until ds.empty?
+      t.patch!(ds.pop.text)
+    end
+
+    return t.to_s
+  end
 
   class Delta
     Author = Etc.getlogin || Etc.getpwuid.name
     def initialize(rev)
+      @num = 0
+      @prevrev = nil
       @rev = rev
-      @delta = {}
+      @date = nil
+      @author = nil
+      @state = nil
+      @branches = nil
+      @nextrev = nil
+      @delta_phrase = {}
       @log = nil
-      @deltatext = {}
+      @deltatext_phrase = {}
       @text = nil
     end
-    attr_reader :delta, :deltatext
-    attr_accessor :log, :text
-  end
+    attr_reader :rev, :delta_phrase, :deltatext_phrase
+    attr_accessor :num, :prevrev
+    attr_accessor :date, :author, :state, :branches, :nextrev, :log, :text
 
-  module Phrase
-    class General
-      def initialize(*words)
-	@words = words
-      end
-      attr_reader :words
+    def dump_delta(out)
+      hash = @delta_phrase
+
+      out << "\n" << @rev.to_s << "\n"
+
+      out << "date\t";
+      y = @date.year
+      y -= 1900 if y < 2000
+      out << sprintf("%d.%02d.%02d.%02d.%02d.%02d",
+        y, @date.month, @date.day, @date.hour, @date.min, @date.sec)
+      out << ";\t"
+      hash.delete :date
+
+      out << "author " << @author << ";\t"
+      hash.delete :author
+
+      out << "state " << @state << ";\n"
+      hash.delete :state
+
+      out << "branches"
+      @branches.each {|b|
+	out << "\n\t" << b.to_s
+      }
+      out << ";\n"
+      hash.delete :branches
+
+      out << "next\t" << @nextrev.to_s << ";\n"
+      hash.delete :next
+
+      hash.each {|keyword, words|
+	out << keyword << "\t"
+	words.each {|w| out << "\n\t"; w.dump(out)}
+	out << ";\n"
+      }
+
     end
 
-    class Revision
-      def initialize(rev)
-        @rev = rev
-      end
-      attr_reader :rev
+    def dump_deltatext(out)
+      hash = @deltatext_phrase
 
-      def words
-	if @rev
-	  return [NUM.new(@rev.to_s)]
-	else
-	  return []
-	end
-      end
-    end
+      out << "\n\n" << @rev.to_s << "\n"
+      out << "log\n" << STR.quote(@log) << "\n"
 
-    class RevisionList
-      def initialize(revs)
-        @revs = revs
-      end
+      hash.each {|keyword, words|
+	out << keyword << "\t"
+	words.each {|w| out << "\n\t"; w.dump(out)}
+	out << ";\n"
+      }
 
-      def words
-	return @revs.collect {|rev| NUM.new(rev.to_s)}
-      end
-    end
-
-    class Author
-      def initialize(author)
-        @author = author
-      end
-
-      def words
-	return [ID.new(@author)]
-      end
-    end
-
-    class State
-      def initialize(state)
-        @state = state
-      end
-
-      def words
-	if @state
-	  return [ID.new(@state)]
-	else
-	  return []
-	end
-      end
-    end
-
-    class Symbols
-      def initialize(alist)
-        @alist = alist
-      end
-
-      def words
-        return @alist.collect {|sym, rev|
-	  [ID.new(sym), COLON.new, NUM.new(rev.to_s)]}.flatten
-      end
-    end
-
-    class Date
-      def Date.create(arg)
-        case arg
-	when Time
-	  return Date.new(arg.dup.gmtime)
-	when String
-	  case arg
-	  when /\A(\d+)\.(\d+)\.(\d+)\.(\d+)\.(\d+)\.(\d+)\z/
-	    year = $1.to_i
-	    month = $2.to_i
-	    day = $3.to_i
-	    hour = $4.to_i
-	    minute = $5.to_i
-	    second = $6.to_i
-	    if year < 69
-	      year += 2000
-	    elsif year < 100
-	      year += 1900
-	    end
-	    return Date.new(Time.gm(year, month, day, hour, minute, second))
-	  end
-	when Phrase::General
-	  words = arg.words
-	  if words.length == 1 && NUM === words[0]
-	    return Date.create(words[0].str)
-	  end
-	end
-	raise ArgumentError.new("unrecognized argument: #{arg.inspect}")
-      end
-
-      def initialize(time)
-	@time = time
-      end
-
-      def words
-	year = @time.year
-	month = @time.month
-	day = @time.day
-	hour = @time.hour
-	minute = @time.minute
-	second = @time.second
-	year -= 1900 if year < 2000
-	return [NUM.new("#{year}.#{month}.#{day}.#{hour}.#{minute}.#{second}")]
-      end
+      out << "text\n" << STR.quote(@text) << "\n"
     end
   end
 end
