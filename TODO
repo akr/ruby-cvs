@@ -9,7 +9,6 @@
 * remote mode
   * talk CVS client/server protocol directly to avoid using CVS command.
     (it is required to specify `description' when adding a file.)
-  * make working directories distinguishable by a server.
 
 * local mode
   * cache whole RCS file in memory.
