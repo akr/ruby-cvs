@@ -100,11 +100,11 @@ class RSP
   end
 
   def RSP.load(filename)
-    return eval(compile_file(filename))
+    return eval(compile_file(filename), TOPLEVEL_BINDING)
   end
 
   def RSP.load_source(filename)
-    return eval(compile_code(filename))
+    return eval(compile_code(filename), TOPLEVEL_BINDING)
   end
 
   def RSP.compile_code(filename)
@@ -112,10 +112,11 @@ class RSP
     gen_body = StringBuffer.new
     depend = []
     compile_template(class_code, gen_body, filename, depend)
+    class_name = "RSP_#{filename.gsub(/\W+/) {|s| s.unpack("H*").first.upcase }}"
     return depend.collect {|name, mtime, md5| <<"End"}.join + <<"End"
 # #{mtime.gmtime.strftime('%Y/%m/%d %H:%M:%S')} #{md5} #{name}
 End
-Class.new.class_eval {
+class #{class_name}
 def initialize(obj)
   @objs = [obj]
 end
@@ -158,12 +159,12 @@ def gen
 #------------------------------------------------------------
   return rsp_buf.join
 end
-if __FILE__ != $0
-  self
-else
-  print self.new(Object.new).gen
 end
-}
+if __FILE__ != $0
+  #{class_name}
+else
+  print #{class_name}.new(Object.new).gen
+end
 End
   end
   class RSPError < StandardError
@@ -338,9 +339,9 @@ End
   ARGV.each {|arg|
     case mode
     when :run
-      print eval(RSP.compile_file(arg)).new(Object.new).gen
+      print eval(RSP.compile_file(arg), TOPLEVEL_BINDING).new(Object.new).gen
     when :sourcerun
-      print eval(RSP.compile_code(arg)).new(Object.new).gen
+      print eval(RSP.compile_code(arg), TOPLEVEL_BINDING).new(Object.new).gen
     when :compile
       begin
 	RSP.compile_file(arg)
