@@ -12,9 +12,8 @@
 
 * local mode
   * cache whole RCS file in memory.
-  * don't use RCS.
 
-* cache mode
+* cache mode (needless?)
   * implement.
   * checking RCS file regeneration identity.
   * think better name.
@@ -27,5 +26,5 @@
   * branch and trunk exchanger.
   * SandWeb (or cvswebclient) like cgi script.
   * wikiwiki like application with revision control.
-  * archive (remote) web diaries periodically.
+  * tool for archiving (remote) web diaries periodically.
   * CVS clone.
