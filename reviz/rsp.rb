@@ -188,3 +188,10 @@ End
     end
   end
 end
+
+if __FILE__ == $0
+  ARGV.each {|filename|
+    print RSP.compile_file(filename)
+  }
+end
+
