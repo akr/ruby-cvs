@@ -1,4 +1,20 @@
-<html>
+<%!
+def expand(line, width=8)
+  result = ""
+  column = 0
+  line.scan(/\t|[^\t]+/) {|s|
+    if s == "\t"
+      w = width - (column % width)
+      result << " " * w
+      column += w
+    else
+      column += s.length
+      result << s
+    end
+  }
+  result
+end
+%><html>
 <head>
 <title>annotate</title>
 </head>
@@ -11,7 +27,7 @@
 %> <%=CGI::escapeHTML author.center(authorlen)
 %> <%=rev2.to_s.ljust(rev2len)
 %> <%=date2 ? date2.strftime('%Y/%m/%d') : ' ' * 10
-%> : <%=CGI::escapeHTML contents
+%> : <%=CGI::escapeHTML expand(contents)
 %><%if nonewline%>
 no newline at last
 <%end
