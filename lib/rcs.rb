@@ -2,8 +2,11 @@ require 'etc'
 require 'rcs/revision'
 require 'rcs/parser'
 require 'rcs/text'
+require 'tempdir'
 
 class RCS
+  Author = Etc.getlogin || Etc.getpwuid.name
+
   def RCS.parse(filename)
     rcs = RCS.new
     open(filename) {|f|
@@ -16,10 +19,10 @@ class RCS
     rcs.each_delta {|d|
       rev = d.rev
       if r = d.nextrev
-        rcs.delta[r].prevrev = rev
+        rcs[r].prevrev = rev
       end
       d.branches.each {|r|
-        rcs.delta[r].prevrev = rev
+        rcs[r].prevrev = rev
       }
     }
 
@@ -40,7 +43,7 @@ class RCS
 
     def delta_begin(rev)
       rev = Revision.create(rev)
-      @rcs.delta[rev] = @delta = Delta.new(rev)
+      @rcs[rev] = @delta = Delta.new(rev)
     end
 
     def delta(rev, date, author, state, branches, nextrev)
@@ -57,7 +60,7 @@ class RCS
 
     def deltatext_begin(rev)
       rev = Revision.create(rev)
-      @delta = @rcs.delta[rev]
+      @delta = @rcs[rev]
       @delta.num = (@deltatextnum += 1)
     end
 
@@ -89,14 +92,30 @@ class RCS
     @admin_phrase = {}
     @desc = ''
     @delta = {}
+    @branch2head = {}
 
     @head = nil
     @branch = nil
     @symbols = []
     @locks = []
   end
-  attr_reader :admin_phrase, :desc, :delta
+  attr_reader :admin_phrase, :desc
   attr_accessor :head, :branch, :symbols, :locks
+
+  def [](rev)
+    return @delta[rev]
+  end
+
+  def []=(rev, d)
+    @delta[rev] = d
+    b = rev.on_trunk? ? nil : rev.branch
+    if @branch2head.include? b
+      r = @branch2head[b]
+      @branch2head[b] = rev if r < rev
+    else
+      @branch2head[b] = rev
+    end
+  end
 
   def dump(out="")
     hash = @admin_phrase.dup
@@ -210,8 +229,84 @@ class RCS
     return t.to_s
   end
 
+  def RCS.diff(a, b)
+    apath = TempDir.global.newpath
+    bpath = TempDir.global.newpath
+    open(apath, 'w') {|f| f.print a}
+    open(bpath, 'w') {|f| f.print b}
+    ret = `diff -n #{apath} #{bpath}`
+    File.unlink apath, bpath
+    return ret
+  end
+
+  def mkrev(contents, log, author=nil, date=nil, state=nil, rev=nil, delta_phrases={}, deltatext_phrases={})
+    author ||= Author
+    date ||= Time.now
+    state ||= 'Exp'
+
+    unless rev
+      rev = @head ? @head.next : Revision.create('1.1')
+    end
+
+    if rev.on_trunk?
+      if @head
+	prevrev = @head
+      else
+        prevrev = nil
+      end
+    else
+      if @branch2head.include? rev.branch
+	prevrev = @branch2head[rev.branch]
+      else
+	prevrev = rev.origin
+      end
+    end
+
+    if rev.on_trunk?
+      branch = nil
+    else
+      branch = rev.branch
+    end
+    if prevrev
+      raise StandardError.new("#{prevrev} is not on #{branch}") unless prevrev.on? branch
+      raise StandardError.new("#{prevrev} is not after #{rev}") if rev <= prevrev
+    end
+
+    d = Delta.new(rev)
+    d.date = date
+    d.author = author
+    d.state = state
+    d.log = log
+    delta_phrases.each {|k, v| d.delta_phrase[k] = v}
+    deltatext_phrases.each {|k, v| d.deltatext_phrase[k] = v}
+
+    @delta[rev] = d
+    if rev.on_trunk?
+      d.nextrev = prevrev
+      d.text = contents
+      if @head
+	prevdelta = @delta[prevrev]
+	prevcontents = checkout(prevrev)
+	prevdelta.text = RCS.diff(contents, prevcontents)
+	prevdelta.prevrev = rev
+      end
+      @head = rev
+    else
+      prevdelta = @delta[prevrev]
+      prevcontents = checkout(prevrev)
+      if prevrev == rev.origin
+	prevdelta.branches << rev
+      else
+	prevdelta.nextrev = rev
+      end
+      d.text = RCS.diff(prevcontents, contents)
+      d.prevrev = prevrev
+    end
+    @branch2head[branch] = rev
+    return self
+  end
+
   class Delta
-    Author = Etc.getlogin || Etc.getpwuid.name
     def initialize(rev)
       @num = 0
       @prevrev = nil
@@ -219,7 +314,7 @@ class RCS
       @date = nil
       @author = nil
       @state = nil
-      @branches = nil
+      @branches = []
       @nextrev = nil
       @delta_phrase = {}
       @log = nil
