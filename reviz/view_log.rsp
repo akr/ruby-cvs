@@ -1,0 +1,18 @@
+<html>
+<head>
+<title>file log</title>
+</head>
+<body>
+
+<!begin:log><p>
+<a name="#rev<!var:rev>"></a>
+<!begin:tag_list><a name="#<!var:tag>"></a>
+<!end:tag_list>Revision <b><a href="<!var:checkout_url>"><!var:rev></a></b> /
+<a href="<!var:annotate_url>">annotate</a>,
+<i><!var:date></i> by <i><!var:author></i>
+</p>
+<pre><!var:message></pre>
+<hr><!end:log>
+
+</body>
+</html>

@@ -1,0 +1,10 @@
+<html>
+<head>
+<title>repository list</title>
+</head>
+<body>
+<ul>
+<!begin:repository_list><li><a href="<!var:url>"><!var:repository_name></a></li>
+<!end:repository_list></ul>
+</body>
+</html>

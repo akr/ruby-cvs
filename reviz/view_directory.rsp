@@ -1,0 +1,26 @@
+<html>
+<head>
+<title>directory</title>
+</head>
+<body>
+
+<!begin:directory>
+<h2>directory</h2>
+<ul>
+<!begin:directory_list>
+<li><a href="<!var:url>"><!var:name></a></li>
+<!end:directory_list>
+</ul>
+<!end:directory>
+
+<!begin:file>
+<h2>file</h2>
+<ul>
+<!begin:file_list>
+<li><a href="<!var:url>"><!var:name></a></li>
+<!end:file_list>
+</ul>
+<!end:file>
+
+</body>
+</html>

@@ -1,0 +1,8 @@
+<html>
+<head>
+<title>annotate</title>
+</head>
+<body>
+<pre><!begin:line><!var:date1> <!var:rev1> <!var:author> <!var:rev2> <!var:date2> : <!var:contents><!var:nonewline><!end:line></pre>
+</body>
+</html>
