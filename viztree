@@ -1,8 +1,8 @@
 #!/usr/local/bin/ruby
 
-## cvstree visualize branch relations in a module.
+## VizTree visualize branch relations in a module.
 
-# cvstree generates a graph of branches in the format handled by `dot'
+# VizTree generates a graph of branches in the format handled by `dot'
 # utility in GraphViz [http://www.research.att.com/sw/tools/graphviz/].
 # Since ImageMagick [http://www.imagemagick.org/] recognizes the format,
 # `display' utility can handle it if `dot' and `gs' is available. 
@@ -10,18 +10,18 @@
 # ImageMagick 5.1.1.)
 
 ## Usage:
-# cvstree [options] file,v|directory ...
+# viztree [options] file,v|directory ...
 # option: -h : print this help message.
 #         -a : show all relations.
 
 ## Example:
-# cvstree -a ~/.cvsroot/tmp/apel|display
-# cvstree ~/.cvsroot/tmp/flim|dot -Tpng
-# cvstree ~/.cvsroot/tmp/gnus|dot -Tsvg
-# cvstree :fork:$HOME/.cvsroot//ccvs//ChangeLog|display
+# viztree -a ~/.cvsroot/tmp/apel|display
+# viztree ~/.cvsroot/tmp/flim|dot -Tpng
+# viztree ~/.cvsroot/tmp/gnus|dot -Tsvg
+# viztree :fork:$HOME/.cvsroot//ccvs//ChangeLog|display
 
 ## ToDo:
-# visualize other trees other than branch tree: directory tree and revision tree.
+# visualize trees other than branch tree: directory tree and revision tree.
 
 require 'cvs'
 require 'getoptlong'
@@ -201,7 +201,7 @@ end
 
 def usage
   STDERR.print <<"End"
-usage: cvstree [options] file,v|directory|cvsroot//module ...
+usage: viztree [options] file,v|directory|cvsroot//module ...
 option: -h : print this help message.
         -a : show all relations.
 End
