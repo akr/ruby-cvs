@@ -380,8 +380,8 @@ class RCS
       @deltatext_phrase = {}
       @text = nil
     end
-    attr_reader :rev, :delta_phrase, :deltatext_phrase
-    attr_accessor :num, :prevrev, :log
+    attr_reader :rev, :delta_phrase, :deltatext_phrase, :log
+    attr_accessor :num, :prevrev
     attr_accessor :date, :author, :state, :branches, :nextrev, :text
 
     def log=(str)

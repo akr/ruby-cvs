@@ -309,10 +309,10 @@ class CVS
 
 	if attic != nil
 	  return prefix + (attic ?  'Attic/' : '') + suffix
-	elsif FileTest.exist? (result_without_attic = prefix + suffix)
+	elsif FileTest.exist?(result_without_attic = prefix + suffix)
 	  @attic = false
 	  return result_without_attic
-	elsif FileTest.exist? (result_with_attic = prefix + 'Attic/' + suffix)
+	elsif FileTest.exist?(result_with_attic = prefix + 'Attic/' + suffix)
 	  @attic = true
 	  return result_with_attic
 	else
