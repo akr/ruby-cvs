@@ -98,6 +98,7 @@ class RSP
     compile_template(class_code, gen_body, filename, depend)
     return <<"End"
 # #{depend.join(' ')}
+require 'rsp'
 Class.new.class_eval {
 def initialize(obj)
   @objs = [obj]
@@ -127,7 +128,11 @@ def gen
 #------------------------------------------------------------
   return buf.to_s
 end
-self
+if __FILE__ != $0
+  self
+else
+  print self.new(Object.new).gen
+end
 }
 End
   end
@@ -249,21 +254,50 @@ End
 end
 
 if __FILE__ == $0
-  opt_p = false
-  ARGV.each {|arg|
-    if arg == '-p'
-      opt_p = true
+  $" << 'rsp.rb'
+
+  def usage(status)
+      print <<End
+Usage: rsp [-h] [-c] [-p] rsp-file...
+End
+    exit(status)
+  end
+
+  require 'getoptlong'
+  getopts = GetoptLong.new(
+    [GetoptLong::NO_ARGUMENT, '-h'],
+    [GetoptLong::NO_ARGUMENT, '-c'],
+    [GetoptLong::NO_ARGUMENT, '-p'])
+
+  mode = :run
+  getopts.each {|opt, arg|
+    case opt
+    when '-h'
+      usage(0)
+    when '-c'
+      mode = :compile
+    when '-p'
+      mode = :print
     else
-      if opt_p
-	print RSP.compile_code(arg)
-      else
-	begin
-	  RSP.compile_file(arg)
-	rescue Exception
-	  STDERR.print "#{arg} has an error.\n"
-	  raise
-	end
+      usage(1)
+    end
+  }
+
+  ARGV.each {|arg|
+    case mode
+    when :run
+      print eval(RSP.compile_file(arg)).new(Object.new).gen
+    when :sourcerun
+      print eval(RSP.compile_code(arg)).new(Object.new).gen
+    when :compile
+      begin
+	RSP.compile_file(arg)
+      rescue Exception
+	STDERR.print "#{arg} has an error.\n"
+	raise
       end
+    when :print
+      print RSP.compile_code(arg)
     end
   }
 end
