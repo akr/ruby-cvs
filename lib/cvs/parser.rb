@@ -23,6 +23,12 @@ class CVS
 	@eof = false
       end
 
+      def eof?
+	return false unless @buf.empty?
+	return true if @eof
+	return @in.eof?
+      end
+
       def readmore
 	return @in.readline
       end

@@ -158,6 +158,24 @@ class CVS
 	return res
       end
 
+      def parse_log(visitor, opts=[])
+        parse_raw_log(Parser::Log::LogVisitor.new(visitor), opts)
+      end
+
+      def parse_raw_log(visitor, opts=[])
+	r, w = IO.pipe
+	r.fcntl(Fcntl::F_SETFD, r.fcntl(Fcntl::F_GETFD) | 1)
+	w.fcntl(Fcntl::F_SETFD, w.fcntl(Fcntl::F_GETFD) | 1)
+        run_cvs(['log', *opts], w, '/dev/null', [], nil, lambda {
+	  w.close
+	  parser = Parser::Log.new(r)
+	  until parser.eof?
+	    parser.parse(visitor)
+	  end
+	  r.close
+	})
+      end
+
       def to_s
 	return "<#{self.class} #{@cvsroot.cvsroot}//#{@path}>"
       end
@@ -221,6 +239,25 @@ class CVS
 	  f = wd.open(@name)
 	  yield f, Attr.new(mtime, mode)
 	}
+      end
+
+      def annotate(rev)
+	r, w = IO.pipe
+	r.fcntl(Fcntl::F_SETFD, r.fcntl(Fcntl::F_GETFD) | 1)
+	w.fcntl(Fcntl::F_SETFD, w.fcntl(Fcntl::F_GETFD) | 1)
+        @dir.run_cvs(['annotate', '-r' + rev.to_s, @name], w, '/dev/null', [], nil, lambda {
+	  w.close
+	  while line = r.gets
+	    if /\A([0-9.]+) +\(([^ ]+) +(..)-(...)-(..)\): / =~ line
+	      rev = Revision.create($1)
+	      author = $2
+	      date = Time.gm($5.to_i, $4, $3.to_i)
+	      contents = $'
+	      yield contents, rev, author, date
+	    end
+	  end
+	  r.close
+	})
       end
 
       def head(tag=nil)

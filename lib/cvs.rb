@@ -86,6 +86,11 @@ class CVS
 
   # `M' (module) is better? not?
   class D # directory
+    def parse_log(visitor, opts=[])
+      listfile.each {|f|
+        f.parse_log(visitor, opts)
+      }
+    end
   end
 
   class F # file
@@ -126,12 +131,14 @@ end
 # c.dir('.').listdir.each {|d| p d.path}
 # c.dir('gnus').listdir.each {|d| p d.path}
 # c.dir('gnus/lisp').listfile.each {|f| p f.name}
+# c.dir('semi').parse_log(CVS::Visitor::Dump.new)
 # c.file('flim/ChangeLog').tags.each {|tag,rev| p [tag,rev.to_s]}
 # c.file('flim/DOODLE-VERSION').tags.each {|tag,rev| p [tag,rev.to_s]}  # cvs.rb handles attic-ness for you.
 # c.file('semi/ChangeLog').parse_raw_log(CVS::Visitor::Dump.new)
 # c.file('semi/ChangeLog').parse_log(CVS::Visitor::Dump.new)
 # c.file('flim/ChangeLog').checkout(CVS::Revision.create("1.1.1.1")) {|f, a| p a; print f.read}
 # c.file('apel/ChangeLog').heads.each {|t, h| print "#{t||'*maintrunk*'} #{h}\n"}
+# c.file('flim/ChangeLog').annotate(CVS::Revision.create("1.30")) {|line, rev, author, date| p [line, rev, author, date]}
 
 ## needs write permission (works with remote repositories):
 

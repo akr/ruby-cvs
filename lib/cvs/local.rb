@@ -69,6 +69,32 @@ class CVS
 	return res
       end
 
+      def parse_raw_log(visitor, opts=[])
+	rcs_pathnames = listfile.collect {|f| f.rcs_pathname}
+	return if rcs_pathnames.empty?
+	with_work {|t|
+	  r, w = IO.pipe
+	  pid = fork {
+	    STDOUT.reopen(w)
+	    open('/dev/null', 'w') {|f| STDERR.reopen(f)}
+	    r.close
+	    w.close
+	    Dir.chdir(t.path)
+	    command = ['rlog']
+	    command += opts
+	    command += rcs_pathnames
+	    exec *command
+	  }
+	  w.close
+	  parser = Parser::Log.new(r)
+	  until parser.eof?
+	    parser.parse(visitor)
+	  end
+	  r.close
+	  Process.waitpid(pid, 0)
+	}
+      end
+
       # locking interfaces:
       #
       # * read_lock {...}
