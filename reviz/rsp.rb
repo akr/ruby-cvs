@@ -76,14 +76,9 @@ Class.new.class_eval {
 def initialize(obj)
   @obj = obj
 end
-def method_missing(msg_id, *args, &block)
-  @obj.send(msg_id, *args, &block)
-end
-def with(obj, &block)
-  obj.instance_eval(&block)
-end
 def gen
   buf = RSP::StringBuffer.new
+  @obj.instance_eval {
 #------------------------------------------------------------
 End
     state = :contents
@@ -120,6 +115,7 @@ End
     raise RSPError.new("#{line_open}: non-terminated Ruby code") if state != :contents
     result << <<'End'
 #------------------------------------------------------------
+  }
   return buf.to_s
 end
 self
@@ -146,6 +142,10 @@ End
 
   def initialize(hash)
     @hash = hash.dup
+  end
+
+  def with(obj, &block)
+    obj.instance_eval(&block)
   end
 
   def method_missing(msg_id, *args)
