@@ -27,7 +27,8 @@ class CVS
     end
 
     def initialize(arr)
-      @arr = arr
+      @arr = arr.dup
+      @arr.freeze
     end
     attr_reader :arr
 
@@ -81,18 +82,38 @@ class CVS
 	return NonBranch.new(arr)
       end
 
+=begin
+--- on?(branch)
+    returns true if self is a revision on `branch'.
+    Note that self is the branch point of `branch', it returns true.
+
+    I.e. when self is `a.b.c.d', it returns true
+    iff `branch' is `a.b.c' or `a.b.c.d.e'.
+=end
       def on?(br)
         if br
-	  return br.branch? && @arr.length - 1 == br.arr.length && @arr[0...-1] == br.arr
+	  return br.branch? &&
+	    ((@arr.length - 1 == br.arr.length && @arr[0...-1] == br.arr) ||
+	     (@arr.length + 1 == br.arr.length && @arr == br.arr[0...-1]))
 	else
 	  return on_trunk?
 	end
       end
 
+=begin
+--- on_trunk?
+    returns true if self is a revision on the trunk.
+    I.e. it returns true if self is formed as `a.b'.
+=end
       def on_trunk?
 	return @arr.length == 2
       end
 
+=begin
+--- branch
+    returns the branch of self.
+    I.e. it returns `a.b.c' if self is formed as `a.b.c.d'.
+=end
       def branch
 	return Branch.new(@arr[0...-1])
       end
@@ -100,21 +121,6 @@ class CVS
       def origin
 	raise RevisionError.new("There is no origin of a trunk revision: #{self}") if @arr.length == 2
 	return NonBranch.new(@arr[0...-2])
-      end
-
-      def ancestor?(r)
-	if r == nil
-	  return on_trunk?
-	elsif on_trunk?
-	  return r.on_trunk? && r <= self
-        elsif r.branch?
-	  return r.arr.length < @arr.length &&
-	         r.arr == @arr[0, r.arr.length]
-	else
-	  return r.arr.length <= @arr.length &&
-	         r.arr[0..-2] == @arr[0, r.arr.length - 1] &&
-		 r.arr[-1] <= @arr[r.arr.length - 1]
-	end
       end
     end
 

@@ -122,7 +122,7 @@ class CVS
       end
     end
 
-    # cat xxx,v|ruby -rcvs -e 'CVS::Parser::RCS.new.parse(CVS::Visitor::Dump.new)'
+    # cat foo,v|ruby -rcvs -e 'CVS::Parser::RCS.new.parse(CVS::Visitor::Dump.new)'
     class RCS
       def initialize(input=STDIN)
 	@scanner = @@scanner.new(input)
@@ -568,7 +568,7 @@ class CVS
       end
     end
 
-    # rlog xxx,v|ruby -rcvs -e 'CVS::Parser::Log.new.parse(CVS::Visitor::Dump.new)'
+    # rlog foo,v|ruby -rcvs -e 'CVS::Parser::Log.new.parse(CVS::Visitor::Dump.new)'
     class Log
       include Buffer
 

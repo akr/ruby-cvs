@@ -224,7 +224,7 @@ class CVS
 	      author = $2
 	      date = Time.gm($5.to_i, $4, $3.to_i)
 	      contents = $'
-	      yield contents, rev, author, date
+	      yield contents, date, rev, author
 	    end
 	  end
 	  r.close
