@@ -5,17 +5,8 @@
 <body>
 
 <%with(log) {
-%><p>
-<a name="#rev<%=rev%>"></a>
-<%tags.each {|tag|
-%><a name="#<%=tag%>"></a>
-<%}
-%>Revision <b><a href="<%=checkout_url%>"><%=rev%></a></b> /
-<a href="<%=annotate_url%>">annotate</a>,
-<i><%=CGI::escapeHTML date.to_s%></i> by <i><%=CGI::escapeHTML author%></i>
-</p>
-<pre><%=CGI::escapeHTML message%></pre>
-<%}%>
+%><%@ include file="log.rsp"
+%><%}%>
 <p><%=CGI::escapeHTML attributes%></p>
 <hr>
 <pre><%=CGI::escapeHTML contents%></pre>
