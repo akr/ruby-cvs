@@ -14,7 +14,8 @@ class CVS
     end
 
     def newworkdir(dir)
-      return WorkDir.new(dir, TempDir)
+      @workdir = WorkDir.new(top_dir, TempDir) unless @workdir
+      return WorkDir.new(dir, @workdir)
     end
 
     class WorkDir < DelegateClass(TempDir)
@@ -35,6 +36,56 @@ class CVS
 	  f.print "D\n"
 	}
       end
+
+      def basename
+        return File.basename(path)
+      end
+
+      def run_cvs_raw(args, out=nil, err=nil, env=[])
+	command = ['cvs', '-f', '-d', @dir.cvsroot.cvsroot]
+	command += args
+	pid = fork {
+	  env.each {|k, v| ENV[k] = v}
+	  if IO === out
+	    STDOUT.reopen(out)
+	  elsif out == nil
+	    File.open('/dev/null', "w") {|f| STDOUT.reopen(f)}
+	  else
+	    File.open(out, "w") {|f| STDOUT.reopen(f)}
+	  end
+	  if IO === err
+	    STDERR.reopen(err)
+	  elsif err == nil
+	    File.open('/dev/null', "w") {|f| STDERR.reopen(f)}
+	  else
+	    File.open(err, "w") {|f| STDERR.reopen(f)}
+	  end
+	  Dir.chdir(path('..'))
+	  exec(*command)
+	}
+	Process.waitpid(pid, nil)
+	status = $?
+	if block_given?
+	  return yield status
+	else
+	  return status
+	end
+      end
+
+      def run_cvs(args, out='/dev/null', err='/dev/null', env=[])
+        status = run_cvs_raw(args, out, err, env)
+	raise CVSCommandFailure.new(status) if status != 0
+	if block_given?
+	  return yield status
+	else
+	  return status
+	end
+      end
+      class CVSCommandFailure < StandardError
+        def initialize(status)
+	  super("status: #{status}")
+	end
+      end
     end
 
     class D < CVS::D
@@ -51,44 +102,6 @@ class CVS
 	  @work = @cvsroot.newworkdir(self)
 	end
 	yield @work
-      end
-
-      def run_cvs_may_error(args, out='/dev/null', err='/dev/null', env=[], setup_proc=nil, conc_proc=nil)
-	command = ['cvs', '-f', '-d', @cvsroot.cvsroot]
-	command += args
-	with_work {|wd|
-	  setup_proc.call(wd) if setup_proc
-	  pid = fork {
-	    env.each {|k, v| ENV[k] = v}
-	    if IO === out
-	      STDOUT.reopen(out)
-	    else
-	      open(out, "w") {|f| STDOUT.reopen(f)}
-	    end
-	    if IO === err
-	      STDERR.reopen(err)
-	    else
-	      open(err, "w") {|f| STDERR.reopen(f)}
-	    end
-	    Dir.chdir(wd.path)
-	    exec(*command)
-	  }
-	  conc_proc.call(wd) if conc_proc
-	  Process.waitpid(pid, nil)
-	  yield wd, $? if block_given?
-	}
-      end
-
-      def run_cvs(args, out='/dev/null', err='/dev/null', env=[], setup_proc=nil, conc_proc=nil)
-        run_cvs_may_error(args, out, err, env, setup_proc, conc_proc) {|wd, status|
-	  raise CVSCommandFailure.new(status) if status != 0
-	  yield wd if block_given?
-	}
-      end
-      class CVSCommandFailure < StandardError
-        def initialize(status)
-	  super("status: #{status}")
-	end
       end
 
       def top?
@@ -111,36 +124,40 @@ class CVS
 
       def listdir
 	res = []
-	r, w = IO.pipe
-	r.fcntl(Fcntl::F_SETFD, r.fcntl(Fcntl::F_GETFD) | 1)
-	w.fcntl(Fcntl::F_SETFD, w.fcntl(Fcntl::F_GETFD) | 1)
-        run_cvs(['update', '-r00', '-d', '-p'], '/dev/null', w, [], nil, lambda {
-	  w.close
-	  while line = r.gets
-	    if / server: New directory `(.*)' -- ignored\n\z/ =~ line
-	      res << dir($1)
-	    end
-	  end
-	  r.close
-	})
+	with_work {|wd|
+	  err = TempDir.global.newpath
+	  wdname = wd.basename
+	  wd.run_cvs(['update', '-r00', '-d', '-p', wdname], nil, err) {|status|
+	    open(err) {|f|
+	      f.each_line {|line|
+		p line
+		if / server: New directory `#{wdname}\/(.*)' -- ignored\n\z/ =~ line
+		  res << simple_dir($1)
+		end
+	      }
+	    }
+	    File.unlink(err)
+	  }
+	}
 	return res
       end
 
       def listfile
 	res = []
-	r, w = IO.pipe
-	r.fcntl(Fcntl::F_SETFD, r.fcntl(Fcntl::F_GETFD) | 1)
-	w.fcntl(Fcntl::F_SETFD, w.fcntl(Fcntl::F_GETFD) | 1)
-        run_cvs(['log', '-R'], w, '/dev/null', [], nil, lambda {
-	  w.close
-	  res = []
-	  while line = r.gets
-	    if /\/(Attic\/)?([^\/]*),v\n\z/ =~ line
-	      res << file($2, $1 != nil)
-	    end
-	  end
-	  r.close
-	})
+	with_work {|wd|
+	  out = TempDir.global.newpath
+	  wdname = wd.basename
+	  wd.run_cvs(['log', '-R', wdname], out) {|status|
+	    open(out) {|f|
+	      f.each_line {|line|
+		if /\/(Attic\/)?([^\/]*),v\n\z/ =~ line
+		  res << file($2, $1 != nil)
+		end
+	      }
+	    }
+	    File.unlink(out)
+	  }
+	}
 	return res
       end
 
@@ -149,55 +166,59 @@ class CVS
       end
 
       def parse_raw_log(visitor, opts=[])
-	r, w = IO.pipe
-	r.fcntl(Fcntl::F_SETFD, r.fcntl(Fcntl::F_GETFD) | 1)
-	w.fcntl(Fcntl::F_SETFD, w.fcntl(Fcntl::F_GETFD) | 1)
-        run_cvs(['log', *opts], w, '/dev/null', [], nil, lambda {
-	  w.close
-	  parser = Parser::Log.new(r)
-	  until parser.eof?
-	    parser.parse(visitor)
-	  end
-	  r.close
-	})
+	res = []
+	with_work {|wd|
+	  out = TempDir.global.newpath
+	  wdname = wd.basename
+	  wd.run_cvs(['log', *opts] << wdname, out) {|status|
+	    open(out) {|f|
+	      parser = Parser::Log.new(f)
+	      until parser.eof?
+	        res << parser.parse(visitor)
+	      end
+	    }
+	    File.unlink(out)
+	  }
+	}
+	return res
       end
 
       def mkdir(name)
-	run_cvs(['add', name], '/dev/null', '/dev/null', [], lambda {|wd|
+	with_work {|wd|
 	  wd.mkdir(name)
-	})
+	  wdname = wd.basename
+	  wd.run_cvs(['add', wdname + '/' + name])
+	}
 	return simple_dir(name)
       end
 
       def mkfile(name, contents, log, description='', branch_tag=nil)
 	# `description' is ignored with a remote repository because
-	# `cvs commit' doesn't send CVS/xxx,t to the server.  It is
-	# possible to send the description to the server if `add' and
-	# `commit' request is sent on SINGLE connection.  But it is
-	# impossible with cvs COMMAND and it requires to talk CVS
-	# client/server protocol directly.
+	# well known CVS bug.  (see BUGS file in CVS distribution.)
+	# It is possible to avoid the bug by sending `add' and `commit'
+	# request on SINGLE connection.  But it is impossible with cvs
+	# COMMAND and it requires to talk CVS client/server protocol directly.
 	newrev = nil
-	r, w = IO.pipe
-	r.fcntl(Fcntl::F_SETFD, r.fcntl(Fcntl::F_GETFD) | 1)
-	w.fcntl(Fcntl::F_SETFD, w.fcntl(Fcntl::F_GETFD) | 1)
-	run_cvs(['commit', '-f', '-m', log, name], w, '/dev/null', [],
-	  lambda {|wd|
-	    wd.open("CVS/#{name},t", 'w') {|f| f.print(description)}
-	    wd.open(name, 'w') {|f| f.print(contents)}
-	    wd.entries[name] = "0//-ko/#{branch_tag && ('T' + branch_tag)}"
-	    wd.update_entries
-	  },
-	  lambda {|wd|
-	    w.close
-	    while line = r.gets
-	      if /^initial revision: ([0-9.]+)$/ =~ line
-		newrev = Revision.create($1)
-	      elsif /^new revision: ([0-9.]+); previous revision: [0-9.]+$/ =~ line
-		newrev = Revision.create($1)
-	      end
-	    end
-	    r.close
-	  })
+	with_work {|wd|
+	  out = TempDir.global.newpath
+	  wd.open("CVS/#{name},t", 'w') {|f| f.print(description)}
+	  wd.open(name, 'w') {|f| f.print(contents)}
+	  wd.entries[name] = "0//-ko/#{branch_tag && ('T' + branch_tag)}"
+	  wd.update_entries
+	  args = ['commit', '-f', '-m', log, wd.basename + '/' + name]
+	  wd.run_cvs(args, out) {|status|
+	    open(out) {|f|
+	      f.each_line {|line|
+		if /^initial revision: ([0-9.]+)$/ =~ line
+		  newrev = Revision.create($1)
+		elsif /^new revision: ([0-9.]+); previous revision: [0-9.]+$/ =~ line
+		  newrev = Revision.create($1)
+		end
+	      }
+	    }
+	    File.unlink(out)
+	  }
+	}
 	return simple_file(name, branch_tag != nil).newhead(branch_tag, newrev.branch, newrev, 'Exp')
       end
 
@@ -224,14 +245,17 @@ class CVS
 
       def parse_raw_log(visitor, opts=[])
 	res = nil
-	r, w = IO.pipe
-	r.fcntl(Fcntl::F_SETFD, r.fcntl(Fcntl::F_GETFD) | 1)
-	w.fcntl(Fcntl::F_SETFD, w.fcntl(Fcntl::F_GETFD) | 1)
-        @dir.run_cvs(['log'] + opts + [@name], w, '/dev/null', [], nil, lambda {
-	  w.close
-	  res = Parser::Log.new(r).parse(visitor)
-	  r.close
-	})
+	@dir.with_work {|wd|
+	  out = TempDir.global.newpath
+	  args = ['log', *opts]
+	  args << (wd.basename + '/' + @name)
+	  wd.run_cvs(args, out) {|status|
+	    open(out) {|f|
+	      res = Parser::Log.new(f).parse(visitor)
+	    }
+	    File.unlink(out)
+	  }
+	}
 	return res
       end
 
@@ -254,7 +278,8 @@ class CVS
       end
 
       def checkout(rev)
-        @dir.run_cvs(['update', '-ko', '-r' + rev.to_s, @name]) {|wd|
+	@dir.with_work {|wd|
+	  wd.run_cvs(['update', '-ko', '-r' + rev.to_s, wd.basename + '/' + @name])
 	  s = File.stat(wd.path(@name))
 	  modes = ['', 'x', 'w', 'wx', 'r', 'rx', 'rw', 'rwx']
 	  mode = 'u=' + modes[(s.mode & 0700) >> 6] +
@@ -266,26 +291,28 @@ class CVS
       end
 
       def annotate(rev)
-	r, w = IO.pipe
-	r.fcntl(Fcntl::F_SETFD, r.fcntl(Fcntl::F_GETFD) | 1)
-	w.fcntl(Fcntl::F_SETFD, w.fcntl(Fcntl::F_GETFD) | 1)
-        @dir.run_cvs(['annotate', '-r' + rev.to_s, @name], w, '/dev/null', [], nil, lambda {
-	  w.close
-	  while line = r.gets
-	    if /\A([0-9.]+) +\(([^ ]+) +(..)-(...)-(..)\): / =~ line
-	      rev = Revision.create($1)
-	      author = $2
-	      date = Time.gm($5.to_i, $4, $3.to_i)
-	      contents = $'
-	      yield contents, date, rev, author
-	    end
-	  end
-	  r.close
-	})
+	@dir.with_work {|wd|
+	  out = TempDir.global.newpath
+	  wd.run_cvs(['annotate', '-r' + rev.to_s, wd.basename + '/' + @name], out)
+	  open(out) {|f|
+	    f.each_line {|line|
+	      if /\A([0-9.]+) +\(([^ ]+) +(..)-(...)-(..)\): / =~ line
+		rev = Revision.create($1)
+		author = $2
+		date = Time.gm($5.to_i, $4, $3.to_i)
+		contents = $'
+		yield contents, date, rev, author
+	      end
+	    }
+	  }
+	  File.unlink(out)
+	}
       end
 
       def mkbranch(rev, tag)
-        @dir.run_cvs(['tag', '-b', '-r' + rev.to_s, tag, @name], '/dev/null', '/dev/null')
+	@dir.with_work {|wd|
+	  wd.run_cvs(['tag', '-b', '-r' + rev.to_s, tag, wd.basename + '/' + @name])
+	}
 	return head(tag)
       end
 
@@ -372,24 +399,23 @@ class CVS
 	def add(contents, log)
 	  raise AlreadyExist.new("already exist: #{@file.inspect}:#{@head_rev}") if @state != 'dead'
 	  newrev = nil
-	  r, w = IO.pipe
-	  r.fcntl(Fcntl::F_SETFD, r.fcntl(Fcntl::F_GETFD) | 1)
-	  w.fcntl(Fcntl::F_SETFD, w.fcntl(Fcntl::F_GETFD) | 1)
-	  @file.dir.run_cvs(['commit', '-f', '-m', log, @file.name], w, '/dev/null', [], lambda {|wd|
+	  @file.dir.with_work {|wd|
+	    out = TempDir.global.newpath
 	    wd.open(@file.name, 'w') {|f| f.print(contents)}
 	    wd.entries[@file.name] = "0/dummy/-ko/#{@branch_tag && ('T' + @branch_tag)}"
 	    wd.update_entries
-	  }, lambda {|wd|
-	    w.close
-	    while line = r.gets
-	      if /^initial revision: ([0-9.]+)$/ =~ line
-		newrev = Revision.create($1)
-	      elsif /^new revision: ([0-9.]+); previous revision: [0-9.]+$/ =~ line
-		newrev = Revision.create($1)
-	      end
-	    end
-	    r.close
-	  })
+	    wd.run_cvs(['commit', '-f', '-m', log, wd.basename + '/' + @file.name], out)
+	    open(out) {|f|
+	      f.each_line {|line|
+		if /^initial revision: ([0-9.]+)$/ =~ line
+		  newrev = Revision.create($1)
+		elsif /^new revision: ([0-9.]+); previous revision: [0-9.]+$/ =~ line
+		  newrev = Revision.create($1)
+		end
+	      }
+	    }
+	    File.unlink(out)
+	  }
 	  raise UnexpectedResult.new("unexpected revision added: #{newrev} instead of #{next_rev}") if next_rev != newrev
 	  @head_rev = newrev
 	  @state = 'Exp'
@@ -399,22 +425,21 @@ class CVS
 	def checkin(contents, log)
 	  raise NotExist.new("not exist: #{@file.inspect}:#{@head_rev}") if @state == 'dead'
 	  newrev = nil
-	  r, w = IO.pipe
-	  r.fcntl(Fcntl::F_SETFD, r.fcntl(Fcntl::F_GETFD) | 1)
-	  w.fcntl(Fcntl::F_SETFD, w.fcntl(Fcntl::F_GETFD) | 1)
-	  @file.dir.run_cvs(['commit', '-f', '-m', log, @file.name], w, '/dev/null', [], lambda {|wd|
+	  @file.dir.with_work {|wd|
+	    out = TempDir.global.newpath
 	    wd.open(@file.name, 'w') {|f| f.print(contents)}
 	    wd.entries[@file.name] = "#{@head_rev}/dummy/-ko/#{@branch_tag && ('T' + @branch_tag)}"
 	    wd.update_entries
-	  }, lambda {|wd|
-	    w.close
-	    while line = r.gets
-	      if /^new revision: ([0-9.]+); previous revision: [0-9.]+$/ =~ line
-		newrev = Revision.create($1)
-	      end
-	    end
-	    r.close
-	  })
+	    wd.run_cvs(['commit', '-f', '-m', log, wd.basename + '/' + @file.name], out)
+	    open(out) {|f|
+	      f.each_line {|line|
+		if /^new revision: ([0-9.]+); previous revision: [0-9.]+$/ =~ line
+		  newrev = Revision.create($1)
+		end
+	      }
+	    }
+	    File.unlink(out)
+	  }
 	  raise UnexpectedResult.new("unexpected revision checkined: #{newrev} instead of #{next_rev}") if next_rev != newrev
 	  @head_rev = newrev
 	  return newrev
@@ -423,26 +448,25 @@ class CVS
 	def remove(log)
 	  raise NotExist.new("not exist: #{@file.inspect}:#{@head_rev}") if @state == 'dead'
 	  newrev = nil
-	  r, w = IO.pipe
-	  r.fcntl(Fcntl::F_SETFD, r.fcntl(Fcntl::F_GETFD) | 1)
-	  w.fcntl(Fcntl::F_SETFD, w.fcntl(Fcntl::F_GETFD) | 1)
-	  @file.dir.run_cvs(['commit', '-f', '-m', log, @file.name], w, '/dev/null', [], lambda {|wd|
+	  @file.dir.with_work {|wd|
+	    out = TempDir.global.newpath
 	    wd.entries[@file.name] = "-#{@head_rev}/dummy timestamp/-ko/#{@branch_tag && ('T' + @branch_tag)}"
 	    wd.update_entries
-	  }, lambda {|wd|
-	    w.close
-	    while line = r.gets
-	      if /^new revision: delete; previous revision: ([0-9.]+)$/ =~ line
-		rev = Revision.create($1)
-		if rev.branch?
-		  newrev = rev.first
-		else
-		  newrev = rev.next
+	    wd.run_cvs(['commit', '-f', '-m', log, wd.basename + '/' + @file.name], out, '/dev/tty')
+	    open(out) {|f|
+	      f.each_line {|line|
+		if /^new revision: delete; previous revision: ([0-9.]+)$/ =~ line
+		  rev = Revision.create($1)
+		  if rev.branch?
+		    newrev = rev.first
+		  else
+		    newrev = rev.next
+		  end
 		end
-	      end
-	    end
-	    r.close
-	  })
+	      }
+	    }
+	    File.unlink(out)
+	  }
 	  raise UnexpectedResult.new("unexpected revision removed: #{newrev} instead of #{next_rev}") if next_rev != newrev
 	  @head_rev = newrev
 	  @state = 'dead'

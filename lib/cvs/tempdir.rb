@@ -4,15 +4,24 @@
 class CVS
   class TempDir
 =begin
---- TempDir.create([keyword])
+--- TempDir.global([keyword])
+--- TempDir.global([keyword]) {|oldname| ...}
+    returns a temporary directory shared by the process.
+=end
+    @@tempdir = nil
+    def self.global(keyword='ruby-cvs', &genname)
+      @@tempdir = TempDir.new(keyword, &genname) unless @@tempdir
+      return @@tempdir
+    end
+
+=begin
+--- TempDir.create([keyword])                
 --- TempDir.create([keyword]) {|oldname| ...}
     creates temporary subdirectory under a process wide shared temporary
     directory.
 =end
-    @@tempdir = nil
     def self.create(keyword='ruby-cvs', &genname)
-      @@tempdir = TempDir.new(keyword) unless @@tempdir
-      return @@tempdir.newdir(&genname)
+      return global(keyword, &genname).newdir
     end
 
 =begin
@@ -78,6 +87,14 @@ class CVS
       else
         return @dir
       end
+    end
+
+=begin
+--- newpath
+    returns an absolute path for fresh temporary file. 
+=end
+    def newpath
+      return path(newname)
     end
 
 =begin
