@@ -8,76 +8,6 @@ require 'cvs'
 require 'cgi'
 require 'rsp'
 
-class SBuf
-  def initialize
-    @bufs = []
-    @buf = []
-  end
-
-  def <<(string)
-    @buf << string
-    if 4096 <= @buf.length
-      buf = @buf.slice!(0, @buf.length).join
-      if i = @bufs.rindex(nil)
-        @bufs[i] = @bufs[i+1..-1].join + buf
-	@bufs.fill(nil, (i+1)..-1)
-      else
-        @bufs.unshift(@bufs.join + buf)
-	@bufs.fill(nil, 1..-1)
-      end
-      #STDERR.print @bufs.collect {|s| s && s.length}.inspect, "\n"
-    end
-  end
-
-  def each
-    @bufs.each {|s| yield s if s}
-    yield @buf.join
-  end
-end
-
-class CGIBuffer
-  def initialize(cgi)
-    @cgi = cgi
-    @buf = SBuf.new
-    @options = {'type' => 'text/html'}
-  end
-
-  def [](k)
-    return @options[k]
-  end
-
-  def []=(k, v)
-    @options[k] = v
-  end
-
-  def print(*ss)
-    ss.each {|s| @buf << s}
-  end
-
-  def printf(*ss)
-    print sprintf(*ss)
-  end
-
-  def catch
-    begin
-      yield self
-    rescue
-      ex = $!
-      @cgi.print @cgi.header('text/plain')
-      @cgi.print ex.to_s, "\n"
-      ex.backtrace.each {|s|
-        @cgi.print s, "\n"
-      }
-      @cgi.print "\n"
-      @buf.each {|s| @cgi.print s}
-      return
-    end
-
-    @cgi.print @cgi.header(@options)
-    @buf.each {|s| @cgi.print s}
-  end
-end
-
 class ReViz
   StickyParameter = {
     'cvsroot' => CVSROOT_LIST[0][0],
@@ -90,7 +20,6 @@ class ReViz
 
   def initialize
     @cgi = CGI.new
-    @cgibuffer = CGIBuffer.new(@cgi)
   end
 
   def error(msg)
@@ -170,7 +99,7 @@ class ReViz
   end
 
   def main
-    @cgibuffer.catch {
+    errortrap {
       init_cvsroot
       init_url
 
@@ -190,8 +119,26 @@ class ReViz
     }
   end
 
+  def errortrap
+    @cgi_options = {'type' => 'text/html'}
+    begin
+      contents = yield
+    rescue
+      ex = $!
+      @cgi.print @cgi.header('text/plain')
+      @cgi.print ex.to_s, "\n"
+      ex.backtrace.each {|s|
+        @cgi.print s, "\n"
+      }
+      @cgi.print "\n"
+      return
+    end
+    @cgi.print @cgi.header(@cgi_options)
+    @cgi.print contents
+  end
+
   def list_repository
-    @cgibuffer.print RSP.load("#{RSP_DIR}/list_repositories.rsp").new(
+    return RSP.load("#{RSP_DIR}/list_repositories.rsp").new(
       CVSROOT_LIST.collect {|name, *rest|
 	RSP[
 	  :name => name,
@@ -200,7 +147,7 @@ class ReViz
   end
 
   def view_directory
-    @cgibuffer.print RSP.load("#{RSP_DIR}/view_directory.rsp").new(
+    return RSP.load("#{RSP_DIR}/view_directory.rsp").new(
       RSP[
         :directory =>
 	  @cvsdir.listdir.sort {|a,b| a.path <=> b.path}.collect {|subdir|
@@ -218,9 +165,10 @@ class ReViz
   def view_log
     logs = []
     @cvsfile.parse_log(ViewLogVisitor.new {|args| logs << rsp_log(*args)})
-    @cgibuffer.print RSP.load("#{RSP_DIR}/view_log.rsp").new(
+    return RSP.load("#{RSP_DIR}/view_log.rsp").new(
       RSP[
-        :logs => logs]).gen
+        :logs => logs
+      ]).gen
   end
   class ViewLogVisitor < CVS::Visitor
     def initialize(&block)
@@ -259,14 +207,14 @@ class ReViz
     log = nil
     @cvsfile.parse_log(ViewLogVisitor.new {|args| log = rsp_log(*args)},
                        ["-r#{rev.to_s}"])
-    @cvsfile.checkout(rev) {|contents, a|
-      @cgibuffer.print RSP.load("#{RSP_DIR}/view_checkout.rsp").new(
-	RSP[
-	  :log => log,
-	  :contents => contents,
-	  :attributes => a.inspect
-	]).gen
-    }
+    contents, attributes = @cvsfile.checkout(rev) {|c, a| [c, a]}
+    return RSP.load("#{RSP_DIR}/view_checkout.rsp").new(
+      RSP[
+	:log => log,
+	:contents => contents,
+	:attributes => attributes.inspect
+      ]).gen
+
   end
 
   def view_annotate(rev)
@@ -294,7 +242,7 @@ class ReViz
 	authorlen = l
       end
     }
-    @cgibuffer.print RSP.load("#{RSP_DIR}/view_annotate.rsp").new(
+    return RSP.load("#{RSP_DIR}/view_annotate.rsp").new(
       RSP[
         :rev1len => rev1len,
         :rev2len => rev2len,
