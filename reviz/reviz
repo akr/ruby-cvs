@@ -576,8 +576,11 @@ class ReViz
 
   def view_checkout(rev)
     log = nil
-    @cvsfile.parse_log(ViewLogVisitor.new {|args| log = rsp_log(*args)},
-                       ["-r#{rev.to_s}"])
+    @cvsfile.parse_log(
+      ViewLogVisitor.new {|r, *args|
+        log = rsp_log(r, *args) if rev == r
+      },
+      ["-r#{rev.to_s}"])
     contents, attributes = @cvsfile.checkout(rev) {|c, a| [c, a]}
     return RSP.load("#{RSP_DIR}/view_checkout.rsp").new(
       RSP[
