@@ -34,6 +34,7 @@ class Diff
 	  end
 
 	  add.each {|line| hunk << '+' + line}
+	  hunk[-1] += "\n\\ No newline at end of file\n" if /\n\z/ !~ hunk[-1]
 	  l2 += add.length
 	  hunk_tail = 0
         when :add_num
@@ -42,6 +43,7 @@ class Diff
 	  if hunk
 	    if hunk_tail + add.length <= context_lines * 2
 	      add.each {|line| hunk << ' ' + line}
+	      hunk[-1] += "\n\\ No newline at end of file\n" if /\n\z/ !~ hunk[-1]
 	      l1 += add.length
 	      l2 += add.length
 	      hunk_tail += add.length
@@ -54,6 +56,7 @@ class Diff
 		hunk_tail += 1
 		i += 1
 	      end
+	      hunk[-1] += "\n\\ No newline at end of file\n" if /\n\z/ !~ hunk[-1]
 
 	      out << unidiff_hunk_header(hunk_l1, l1 - hunk_l1, hunk_l2, l2 - hunk_l1)
 	      h = hunk.length - (hunk_tail - context_lines)
@@ -66,6 +69,7 @@ class Diff
 	      hunk_l1 = l1 - context_lines
 	      hunk_l2 = l2 - context_lines
 	      hunk = add[-context_lines..-1].collect {|line| ' ' + line}
+	      hunk[-1] += "\n\\ No newline at end of file\n" if /\n\z/ !~ hunk[-1]
 	      hunk_tail = context_lines
 	    end
 	  else
@@ -78,6 +82,7 @@ class Diff
 	    else
 	      hunk = add.collect {|line| ' ' + line}
 	    end
+	    hunk[-1] += "\n\\ No newline at end of file\n" if /\n\z/ !~ hunk[-1]
 	    hunk_tail = hunk.length
 	  end
         when :common_elt_num
@@ -94,6 +99,7 @@ class Diff
 	    hunk_l2 += i
 	  end
 	  del.each {|line| hunk << '-' + line}
+	  hunk[-1] += "\n\\ No newline at end of file\n" if /\n\z/ !~ hunk[-1]
 	  l1 += del.length
 	  hunk_tail = 0
         when :del_num
