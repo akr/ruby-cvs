@@ -1,0 +1,33 @@
+** Ruby/CVS - CVS library for Ruby **
+
+Ruby/CVS is a library to access a CVS repository.
+
+* Home page
+
+http://cvs.m17n.org/~akr/ruby-cvs/
+
+* Requirements
+
+  ruby-1.6.4	(older version may work.)
+  http://www.ruby-lang.org/ 
+
+  cvs-1.11.1p1	(older version may work.)
+  http://www.cvshome.org/
+
+  rcs-5.7	(older version may work.)
+  ftp://ftp.cs.purdue.edu/pub/RCS/
+
+  optional:
+
+  flex.rb-0.10		(older version doesn't work.)
+  http://www.inf.bme.hu/~pts/flex_rb-latest.tar.gz
+  (it makes parsing rcs file faster.)
+
+  HTML/Template 0.12	(older version may work.)
+  http://www.ruby-lang.org/en/raa-list.rhtml?name=HTML%2FTemplate
+  (required for ReViz - ViewCVS like cgi script)
+
+* Author
+
+Tanaka Akira <akr@m17n.org>
+http://cvs.m17n.org/~akr/

@@ -1,0 +1,33 @@
+* interface
+  * create new file - new maintrunk.
+  * create new branch.
+  * create new directory.
+  * keyword expantion.
+
+  * history.
+
+  * diff.
+
+* remote mode
+  * don't use CVS by talking CVS client/server protocol.
+  * make working directories distinguishable by a server.
+
+* local mode
+  * cache whole RCS file in memory.
+  * don't use RCS.
+
+* cache mode
+  * implement.
+  * checking RCS file regeneration identity.
+  * think better name.
+
+* application
+  * ViewCVS (or cvsweb) like cgi script - ReViz - work in progress.
+  * repository downloader - reimplement CVSsuck.
+  * various tree visualizer - VizTree (formaly CVStree)
+  * local modification uploader.
+  * branch and trunk exchanger.
+  * SandWeb (or cvswebclient) like cgi script.
+  * wikiwiki like application with revision control.
+  * archive (remote) web diaries periodically.
+  * CVS clone.
