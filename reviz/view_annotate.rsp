@@ -5,8 +5,7 @@
 <body>
 
 <pre>
-<%
-lines.each_with {
+<%lines.each_with {
 %><%=date1.strftime('%Y/%m/%d')
 %> <%=rev1.to_s.ljust(rev1len)
 %> <%=CGI::escapeHTML author.center(authorlen)

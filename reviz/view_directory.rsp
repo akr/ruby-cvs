@@ -39,13 +39,13 @@ end
 <%}
 %>
 
-<%
-file.each_with {
+<%file.each_with {
 %><tr>
   <td><a href="<%=url%>"><%=CGI::escapeHTML name%></a><%
   if removed
 %> (removed)<%
-  end%></td>
+  end
+%></td>
   <td><%=rev%></td>
   <td><%=age(date)%></td>
   <td><%=CGI::escapeHTML author%></td>
