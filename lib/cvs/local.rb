@@ -718,12 +718,12 @@ class CVS
 	return parse_log(HeadsVisitor.new(self, Head))
       end
 
-      def newhead(branch_tag, branch_rev, head_rev, state)
-        return Head.new(self, branch_tag, branch_rev, head_rev, state)
+      def newhead(branch_tag, branch_rev, head_rev, state, default_branch_head=nil)
+        return Head.new(self, branch_tag, branch_rev, head_rev, state, default_branch_head)
       end
       class Head < R::F::Head
-        def initialize(file, branch_tag, branch_rev, head_rev, state)
-	  super(file, branch_tag, branch_rev, head_rev, state)
+        def initialize(file, branch_tag, branch_rev, head_rev, state, default_branch_head=nil)
+	  super(file, branch_tag, branch_rev, head_rev, state, default_branch_head)
 	end
 
 	def rcs_lock(rev)
@@ -766,6 +766,20 @@ class CVS
 	    }
 	    Process.waitpid(pid, 0)
 	    raise CheckInCommandFailure.new($?) if $? != 0
+
+	    if @default_branch_head
+	      pid = fork {
+		command = ['rcs',
+		  '-q',
+		  '-b',
+		  rcsfile
+		]
+		exec *command
+	      }
+	      Process.waitpid(pid, 0)
+	      raise RCSCommandFailure.new($?) if $? != 0
+	      @default_branch_head = nil
+	    end
 
 	    if @branch_tag == nil && @head_rev.on_trunk?
 	      attic = state == 'dead'

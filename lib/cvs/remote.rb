@@ -334,10 +334,16 @@ class CVS
 	  @branches = {}
 	  @states = {}
 	  @head = nil
+	  @default_branch = nil
+	  @default_branch_head = nil
 	end
 
 	def head(rev)
 	  @head = rev
+	end
+
+	def branch(rev)
+	  @default_branch = rev
 	end
 
         def symbol(tag, rev)
@@ -354,10 +360,15 @@ class CVS
 	  else
 	    @branches[b] = rev
 	  end
+	  if @default_branch && rev.on?(@default_branch)
+	    if !@default_branch_head || @default_branch_head < rev
+	      @default_branch_head = rev
+	    end
+	  end
 	end
 
 	def finished(buf)
-	  @heads[nil] = @headclass.new(@file, nil, nil, @head, @states[@head])
+	  @heads[nil] = @headclass.new(@file, nil, nil, @head, @states[@head], @default_branch_head)
 	  @tags.each {|tag, b|
 	    if @branches.has_key? b
 	      rev = @branches[b]
@@ -371,18 +382,27 @@ class CVS
 	end
       end
 
-      def newhead(branch_tag, branch_rev, head_rev, state)
-	return Head.new(self, branch_tag, branch_rev, head_rev, state)
+      def newhead(branch_tag, branch_rev, head_rev, state, default_branch_head=nil)
+	return Head.new(self, branch_tag, branch_rev, head_rev, state, default_branch_head)
       end
       class Head < CVS::F::Head
-        def initialize(file, branch_tag, branch_rev, head_rev, state)
+        def initialize(file, branch_tag, branch_rev, head_rev, state, default_branch_head=nil)
 	  @file = file
 	  @branch_tag = branch_tag
 	  @branch_rev = branch_rev
 	  @head_rev = head_rev
 	  @state = state
+	  @default_branch_head = default_branch_head
 	end
-	attr_reader :file, :branch_tag, :branch_rev, :head_rev, :state
+	attr_reader :file, :branch_tag, :branch_rev, :head_rev, :state, :default_branch_rev, :default_branch_head
+
+	def current_rev
+	  if @default_branch_head && !@branch_rev
+	    return @default_branch_head
+	  else
+	    return @head_rev
+	  end
+	end
 
 	def next_rev
 	  if @branch_tag
@@ -428,7 +448,7 @@ class CVS
 	  @file.dir.with_work {|wd|
 	    out = TempDir.global.newpath
 	    wd.open(@file.name, 'w') {|f| f.print(contents)}
-	    wd.entries[@file.name] = "#{@head_rev}/dummy/-ko/#{@branch_tag && ('T' + @branch_tag)}"
+	    wd.entries[@file.name] = "#{current_rev}/dummy/-ko/#{@branch_tag && ('T' + @branch_tag)}"
 	    wd.update_entries
 	    wd.run_cvs(['commit', '-f', '-m', log, wd.basename + '/' + @file.name], out)
 	    open(out) {|f|
@@ -447,30 +467,25 @@ class CVS
 
 	def remove(log)
 	  raise NotExist.new("not exist: #{@file.inspect}:#{@head_rev}") if @state == 'dead'
-	  newrev = nil
+	  prev_rev = nil
 	  @file.dir.with_work {|wd|
 	    out = TempDir.global.newpath
-	    wd.entries[@file.name] = "-#{@head_rev}/dummy timestamp/-ko/#{@branch_tag && ('T' + @branch_tag)}"
+	    wd.entries[@file.name] = "-#{current_rev}/dummy timestamp/-ko/#{@branch_tag && ('T' + @branch_tag)}"
 	    wd.update_entries
 	    wd.run_cvs(['commit', '-f', '-m', log, wd.basename + '/' + @file.name], out, '/dev/tty')
 	    open(out) {|f|
 	      f.each_line {|line|
 		if /^new revision: delete; previous revision: ([0-9.]+)$/ =~ line
-		  rev = Revision.create($1)
-		  if rev.branch?
-		    newrev = rev.first
-		  else
-		    newrev = rev.next
-		  end
+		  prev_rev = Revision.create($1)
 		end
 	      }
 	    }
 	    File.unlink(out)
 	  }
-	  raise UnexpectedResult.new("unexpected revision removed: #{newrev} instead of #{next_rev}") if next_rev != newrev
-	  @head_rev = newrev
+	  raise UnexpectedResult.new("unexpected revision removed: #{prev_rev} instead of #{current_rev}") if current_rev != prev_rev
+	  @head_rev = next_rev
 	  @state = 'dead'
-	  return newrev
+	  return @head_rev
 	end
 
 	class UnexpectedResult < StandardError
