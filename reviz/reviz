@@ -70,8 +70,16 @@ class CGIBuffer
     @buf.each {|s| @cgi.print s}
   end
 
-  def dtd
-    print "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n"
+  def xhtml
+    print <<'End'
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" >
+End
+    yield
+    print <<'End'
+</html>
+End
   end
 
   def elt(tag, attr={})
@@ -209,8 +217,7 @@ class RepBrowse
   end
 
   def list_repository
-    @cgibuffer.dtd
-    @cgibuffer.element('html') {
+    @cgibuffer.xhtml {
       @cgibuffer.element('head') {
 	@cgibuffer.element('title') {
 	  @cgibuffer.print 'repository list'
@@ -231,8 +238,7 @@ class RepBrowse
   end
 
   def view_directory
-    @cgibuffer.dtd
-    @cgibuffer.element('html') {
+    @cgibuffer.xhtml {
       @cgibuffer.element('head') {
 	@cgibuffer.element('title') {
 	  @cgibuffer.print 'directory'
@@ -272,8 +278,7 @@ class RepBrowse
   end
 
   def view_log
-    @cgibuffer.dtd
-    @cgibuffer.element('html') {
+    @cgibuffer.xhtml {
       @cgibuffer.element('head') {
 	@cgibuffer.element('title') {
 	  @cgibuffer.print 'file'
@@ -329,8 +334,7 @@ class RepBrowse
   end
 
   def view_checkout(rev)
-    @cgibuffer.dtd
-    @cgibuffer.element('html') {
+    @cgibuffer.xhtml {
       @cgibuffer.element('head') {
 	@cgibuffer.element('title') {
 	  @cgibuffer.print 'checkout'
