@@ -10,10 +10,7 @@
 
   print RSP.load('envlist.rsp').new(
     ENV.keys.sort.collect {|k|
-      RSP[
-	:key => k,
-	:value => ENV[k]
-      ]}).gen
+      RSP[:key => k, :value => ENV[k]]}).gen
 === envlist.rsp:
   <html>
   <head>
