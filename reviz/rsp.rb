@@ -113,7 +113,6 @@ class RSP
     return depend.collect {|name, mtime, md5| <<"End"}.join + <<"End"
 # #{mtime.gmtime.strftime('%Y/%m/%d %H:%M:%S')} #{md5} #{name}
 End
-require 'rsp'
 Class.new.class_eval {
 def initialize(obj)
   @objs = [obj]
@@ -137,11 +136,12 @@ end
 
 #{class_code}
 def gen
-  buf = RSP::StringBuffer.new
+  hash = {}
+  buf = []
 #------------------------------------------------------------
 #{gen_body}
 #------------------------------------------------------------
-  return buf.to_s
+  return buf.join
 end
 if __FILE__ != $0
   self
@@ -205,7 +205,7 @@ End
 	  when /\A!/
 	    class_code << $' << "\n"
 	  when /\A=/
-	    gen_body << "buf << (#{$'}).to_s\n"
+	    gen_body << "buf << hash.fetch((#{$'}).to_s) {|str| hash[str] = str}\n"
 	  when /\A@\s*/
 	    data = $'
 	    case data
