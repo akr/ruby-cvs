@@ -127,6 +127,19 @@ def method_missing(msg_id, *args, &block)
   raise StandardError.new("method `\#{msg_id}' not found")
 end
 
+def respond_to?(name, priv=false)
+  if priv
+    return super
+  else
+    return true if super
+    @objs.reverse_each {|obj|
+      return true if obj.respond_to? name
+    }
+    return false
+  end
+end
+
+
 def with(obj)
   begin
     @objs.push(obj)
@@ -210,12 +223,22 @@ End
 	    gen_body << "rsp_buf << rsp_hash.fetch((#{$'}).to_s) {|rsp_str| rsp_hash[rsp_str] = rsp_str}\n"
 	  when /\A@\s*/
 	    data = $'
-	    case data
-	    when /include\s+file="(.*)"\s*\z/
+	    raise RSPError.new("#{filename}:#{linenumber}: directive name not found") unless /\A\S+/ =~data
+	    directive = $&
+	    data = $'
+	    args = {}
+	    while /\A\s+(\w+)="([^"]*)"/ =~ data
+	      args[$1] = $2
+	      data = $'
+	    end
+	    raise RSPError.new("#{filename}:#{linenumber}: invalid directive") unless /\S*/ =~data
+	    case directive
+	    when 'include'
+	      raise RSPError.new("#{filename}:#{linenumber}: include directive require file attribute") unless args['file']
 	      RSP.compile_template(class_code, gen_body,
-		File.dirname(filename) + '/' + $1, depend, strhash)
+		File.dirname(filename) + '/' + args['file'], depend, strhash)
 	    else
-	      raise RSPError.new("#{filename}:#{linenumber}: unknown directive: #{data}")
+	      raise RSPError.new("#{filename}:#{linenumber}: unknown directive: #{directive}")
 	    end
 	  when /\A#/, /\A--[\000-\377]*--\z/
 	  else

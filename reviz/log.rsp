@@ -5,10 +5,39 @@
 <%}
 %>Revision <b><a href="<%=CGI::escapeHTML checkout_url%>"><%=rev%></a></b> /
 <a href="<%=CGI::escapeHTML annotate_url%>">annotate</a>,
-<i><%=CGI::escapeHTML date.to_s%></i> by <i><%=CGI::escapeHTML author%></i><br>
-<%unless tagged_urls.empty?
-%>CVS Tags<%pre = ': '
-tagged_urls.each {|tag, url|
-%><%=pre%><b><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML tag%></a></b><%pre = ", \n"}%><%end%>
+<i><%=CGI::escapeHTML date.to_s%></i> by <i><%=CGI::escapeHTML author%></i><%
+unless tagged_urls.empty?
+  %><br>
+CVS Tags: <%
+  pre = ''
+  tagged_urls.each {|tag, url|
+    %><%=pre%><b><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML tag%></a></b><%
+    pre = ", \n"
+  }
+end
+
+has_diff_prev = respond_to? :diff_prev_rev
+has_diff_branchpoint = respond_to? :diff_branchpoint_rev
+has_diff_selected = respond_to? :diff_selected_rev
+if has_diff_prev || has_diff_branchpoint || has_diff_selected
+  %><br>
+Diff<%
+  if has_diff_prev
+    %> to previous <a href="<%=
+      CGI::escapeHTML diff_prev_url%>"><%=
+      diff_prev_rev%></a><%
+  end
+  if has_diff_branchpoint
+    %> to a branchpoint <a href="<%=
+      CGI::escapeHTML diff_branchpoint_url%>"><%=
+      diff_branchpoint_rev%></a><%
+  end
+  if has_diff_selected
+    %> to selected <a href="<%=
+      CGI::escapeHTML diff_selected_url%>"><%=
+      diff_selected_rev%></a><%
+  end
+
+end%>
 </p>
 <pre><%=CGI::escapeHTML message%></pre>

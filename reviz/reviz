@@ -6,6 +6,7 @@ require 'reviz-conf.rb'
 
 require 'cvs'
 require 'cgi'
+require 'tempfile'
 require 'rsp'
 
 class ReViz
@@ -38,8 +39,9 @@ class ReViz
     end
     @cvsroot = CVS.create(cvsroot)
 
+    return unless @cgi.path_info
 
-    path_info = (@cgi.path_info || '/')
+    path_info = @cgi.path_info
     path = []
     path_info.scan(/[^\/]+/) {|name|
       next if name == '.' || name == '..'
@@ -110,18 +112,20 @@ class ReViz
       init_cvsroot
       init_url
 
-      if !@cgi.path_info
-        list_repository
-      elsif @cvsfile
+      if @cvsfile
 	if @cgi.has_key? 'rev'
 	  view_checkout(CVS::Revision.create(@cgi['rev'][0]))
 	elsif @cgi.has_key? 'annotate'
 	  view_annotate(CVS::Revision.create(@cgi['annotate'][0]))
+	elsif @cgi.has_key?('r1') && @cgi.has_key?('r2')
+	  view_diff(CVS::Revision.create(@cgi['r1'][0]), CVS::Revision.create(@cgi['r2'][0]))
 	else
 	  view_log
 	end
-      else
+      elsif @cvsdir
 	view_directory
+      else
+        list_repository
       end
     }
   end
@@ -466,11 +470,55 @@ class ReViz
   end
 
   def view_log
-    logs = []
-    @cvsfile.parse_log(ViewLogVisitor.new {|args| logs << rsp_log(*args)})
+    logs = {}
+    bs = {}
+    @cvsfile.parse_log(ViewLogVisitor.new {|rev, *rest|
+      logs[rev] = rsp_log(rev, *rest)
+      b = rev.on_trunk? ? nil : rev.branch
+      bs[b] = [] unless bs.include? b
+      bs[b] << rev
+    })
+    prev_rev = {}
+    bs.each {|b, rs|
+      rs.sort!
+      prev_rev[rs[0]] = b.origin if b
+      r1 = rs[0]
+      (1..rs.length).each {|i|
+        prev_rev[rs[i]] = rs[i-1]
+      }
+    }
+    logs.each {|rev, log|
+      diff_revs = {}
+      if prev_rev.include? rev
+	r = prev_rev[rev]
+	log.prev_rev = r.to_s
+	diff_revs[r] = true
+	log.diff_prev_rev = r.to_s
+	log.diff_prev_url = url(@cvsfile, {'r1'=>r.to_s, 'r2'=>rev.to_s})
+      end
+      if !rev.on_trunk? && !rev.branch.vendor_branch?
+	r = rev.origin
+	unless diff_revs.include? r
+	  diff_revs[r] = true
+	  log.diff_branchpoint_rev = r.to_s
+	  log.diff_branchpoint_url = url(@cvsfile, {'r1'=>r.to_s, 'r2'=>rev.to_s})
+	end
+      end
+      if @cgi.has_key? 'r1'
+        r = CVS::Revision.create(@cgi['r1'][0])
+	unless diff_revs.include? r
+	  diff_revs[r] = true
+	  log.diff_selected_rev = r.to_s
+	  log.diff_selected_url = url(@cvsfile, {'r1'=>r.to_s, 'r2'=>rev.to_s})
+	end
+      end
+    }
+    revs = logs.keys
+    revs.sort!
+    revs.reverse!
     return RSP.load("#{RSP_DIR}/view_log.rsp").new(
       RSP[
-        :logs => logs
+        :logs => revs.collect {|rev| logs[rev]}
       ]).gen
   end
   class ViewLogVisitor < CVS::Visitor
@@ -552,6 +600,24 @@ class ReViz
         :rev2len => rev2len,
         :authorlen => authorlen,
 	:lines => lines
+      ]).gen
+  end
+
+  def view_diff(r1, r2)
+    c1, a1 = @cvsfile.checkout(r1) {|c, a| [c, a]}
+    f1 = Tempfile.new('ruby-cvs-diff1')
+    f1.print c1
+    f1.close
+
+    c2, a2 = @cvsfile.checkout(r2) {|c, a| [c, a]}
+    f2 = Tempfile.new('ruby-cvs-diff2')
+    f2.print c2
+    f2.close
+
+    diff = IO.popen("diff -c #{f1.path} #{f2.path}") {|f| f.read || ''}
+    return RSP.load("#{RSP_DIR}/view_diff.rsp").new(
+      RSP[
+	:diff => diff
       ]).gen
   end
 end
