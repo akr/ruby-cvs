@@ -409,6 +409,26 @@ class CVS
 	  visitor.delta_finished
 	  visitor.description(rcs.desc)
 	  rcs.each_delta {|d|
+	    if r = d.rev.on_trunk? ? d.nextrev : d.rev
+	      add = 0
+	      del = 0
+	      RCS::Text.parse_diff(rcs[r].text) {|mark, beg, len, addlines|
+		if mark == :del
+		  del += len
+		else
+		  add += len
+		end
+	      }
+	      if d.rev.on_trunk?
+	        tmp = add
+		add = del
+		del = tmp
+	      end
+	    else
+	      add = nil
+	      del = nil
+	    end
+	    visitor.delta_rlog(d.rev, nil, d.date, d.author, d.state, add, del, d.branches, d.log)
 	    visitor.delta_without_next(d.rev, d.date, d.author, d.state, d.branches)
 	    visitor.delta(d.rev, d.date, d.author, d.state, d.branches, d.nextrev)
 	    visitor.deltatext_log(d.rev, d.log)

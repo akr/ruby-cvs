@@ -19,7 +19,7 @@ class Diff
 	return
       end
 
-      if i0 + len0 > i || j0 + len0 > j || len
+      if i0 + len0 > i || j0 + len0 > j
 	raise ArgumentError.new("additional common sequence overlapped.")
       end
 

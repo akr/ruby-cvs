@@ -1,7 +1,7 @@
 =begin
 = Diff
 --- Diff.new(seq_a, seq_b)
---- Diff#editscript([algorithm=:speculative])
+--- Diff#ses([algorithm=:speculative])
 --- Diff#lcs([algorithm=:speculative])
 
     Available algorithms are follows.
@@ -20,7 +20,8 @@
 --- Diff::EditScript#additions
 --- Diff::EditScript#deletions
 --- Diff::EditScript#each {|mark, a, b| ...}
---- Diff::EditScript.parse_rcsdiff
+--- Diff::EditScript#apply(arr)
+--- Diff::EditScript.parse_rcsdiff(input)
 --- Diff::EditScript#rcsdiff([out=''])
 
 = Diff::Subsequence
@@ -129,7 +130,7 @@ class Diff
     end
   end
 
-  def lcs(algorithm=:speculative)
+  def lcs(algorithm=:speculative) # longest common subsequence
     klass = Diff.algorithm(algorithm)
     reduced_lcs = klass.new(@a, @b).lcs
 
@@ -145,7 +146,7 @@ class Diff
     return lcs
   end
 
-  def editscript(algorithm=:speculative)
+  def ses(algorithm=:speculative) # shortest edit script
     lcs = lcs(algorithm)
     ses = EditScript.new
     i0 = j0 = 0

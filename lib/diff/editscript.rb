@@ -1,10 +1,14 @@
+require 'diff/rcsdiff'
+
 class Diff
   class EditScript
     def initialize
-      @list = []
-      @chunk_add = nil
-      @chunk_del = nil
       @chunk_common = nil
+      @chunk_add = []
+      @chunk_del = []
+      @list = []
+      @list << @chunk_del
+      @list << @chunk_add
 
       @cs = Subsequence.new
       @count_a = 0
@@ -38,7 +42,7 @@ class Diff
       if !@chunk_del.empty? && @chunk_del.last[0] == mark
 	@chunk_del.last[1] += seq_or_len
       else
-	@chunk_del << [mark, seq_or_len]
+	@chunk_del << [mark, seq_or_len, nil]
       end
       @count_a += len
       @deletions += len
@@ -60,9 +64,9 @@ class Diff
 	mark = :add_num
       end
       if !@chunk_add.empty? && @chunk_add.last[0] == mark
-	@chunk_add.last[1] += seq_or_len
+	@chunk_add.last[2] += seq_or_len
       else
-	@chunk_add << [mark, seq_or_len]
+	@chunk_add << [mark, nil, seq_or_len]
       end
       @count_b += len
       @additions += len
@@ -103,23 +107,41 @@ class Diff
 
     def each
       @list.each {|chunk|
-        chunk.each {|mark, data|
-	  case mark
-	  when :add_elt
-	    data.each {|elt| yield mark, nil, elt}
-	  when :del_elt
-	    data.each {|elt| yield mark, elt, nil}
-	  when :common_elt
-	    data.each {|elt| yield mark, elt, elt}
-	  when :add_num
-	    yield mark, 0, data
-	  when :del_num
-	    yield mark, data, 0
-	  when :common_num
-	    yield mark, data, data
-	  end
+        chunk.each {|mark_del_add|
+	  yield mark_del_add
 	}
       }
+    end
+
+    def apply(src)
+      l = 0
+      dst = []
+      each {|mark, del, add|
+        case mark
+	when :add_elt
+	  dst.concat add
+	when :add_num
+	  raise ArgumentError.new("additionnal lines are not known.")
+	when :common_elt_elt
+	  dst.concat add
+	  l += del.length
+	when :common_elt_num
+	  dst.concat src[l, del]
+	  l += del
+	when :common_num_elt
+	  dst.concat add
+	  l += add
+	when :common_num_num
+	  dst.concat src[l, del]
+	  l += del
+	when :del_elt
+	  l += del.length
+	when :del_num
+	  l += del
+	end
+      }
+      dst.concat src[l..-1]
+      return dst
     end
   end
 end

@@ -3,6 +3,7 @@ require 'rcs/revision'
 require 'rcs/parser'
 require 'rcs/text'
 require 'rcs/annotate'
+require 'diff'
 require 'tempdir'
 
 begin
@@ -294,13 +295,7 @@ class RCS
   end
 
   def RCS.diff(a, b)
-    apath = TempDir.global.newpath
-    bpath = TempDir.global.newpath
-    File.open(apath, 'w') {|f| f.print a}
-    File.open(bpath, 'w') {|f| f.print b}
-    ret = `diff -n #{apath} #{bpath}`
-    File.unlink apath, bpath
-    return ret
+    return Diff.rcsdiff(a, b)
   end
 
   def mkrev(contents, log, author=nil, date=nil, state=nil, rev=nil, delta_phrases={}, deltatext_phrases={})
