@@ -1,6 +1,6 @@
 #!/usr/local/bin/ruby
 
-# repbrowse is a CGI program which browse CVS repository like ViewCVS or cvsweb.
+# reviz is a CGI program which browse CVS repository like ViewCVS or cvsweb.
 
 require 'cvs'
 require 'cgi'
@@ -103,7 +103,7 @@ End
 
 end
 
-class RepBrowse
+class ReViz
   CVSROOT_LIST = [
     ['main', '/home/akr/.cvsroot'],
     ['cvsroot2', '/home/akr/.cvsroot2'],
@@ -357,4 +357,4 @@ class RepBrowse
 
 end
 
-RepBrowse.new.main
+ReViz.new.main
