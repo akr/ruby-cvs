@@ -2,7 +2,13 @@ require 'etc'
 require 'rcs/revision'
 require 'rcs/parser'
 require 'rcs/text'
+require 'rcs/annotate'
 require 'tempdir'
+
+begin
+  require 'rcs/flex'
+rescue LoadError
+end
 
 class RCS
   Author = Etc.getlogin || Etc.getpwuid.name
@@ -27,6 +33,25 @@ class RCS
     }
 
     return rcs
+  end
+
+  class NotExist < StandardError
+  end
+  def RCS.update(filename)
+    # xxx: race condition.
+    raise NotExist.new("RCS file not exist: #{filename}") unless FileTest.exist? filename
+    rcs = RCS.parse(filename)
+    yield rcs
+    rcs.write(filename)
+  end
+
+  class AlreadyExist < StandardError
+  end
+  def RCS.create(filename)
+    # xxx: race condition.
+    raise AlreadyExist.new("RCS file already exist: #{filename}") if FileTest.exist? filename
+    rcs = yield
+    rcs.write(filename)
   end
 
   class InitializeVisitor < Visitor
@@ -123,6 +148,30 @@ class RCS
       @branch2head[b] = rev if r < rev
     else
       @branch2head[b] = rev
+    end
+  end
+
+  class WriteFailure < StandardError
+  end
+  def write(filename)
+    tmpname = File.dirname(filename) + '/,' + File.basename(filename, ",v") + ','
+    begin
+      f = File.open(tmpname, File::Constants::WRONLY |
+			     File::Constants::TRUNC |
+			     File::Constants::CREAT |
+			     File::Constants::EXCL)
+    rescue Errno::EEXIST
+      raise WriteFailure.new("temporary file already exist: #{tmpname}")
+    end
+
+    renamed = false
+    begin
+      self.dump(f)
+      f.close
+      File.rename(tmpname, filename)
+      renamed = true
+    ensure
+      File.unlink tmpname unless renamed
     end
   end
 

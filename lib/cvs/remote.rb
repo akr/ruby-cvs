@@ -210,9 +210,9 @@ class CVS
 	    File.open(out) {|f|
 	      f.each_line {|line|
 		if /^initial revision: ([0-9.]+)$/ =~ line
-		  newrev = Revision.create($1)
+		  newrev = RCS::Revision.create($1)
 		elsif /^new revision: ([0-9.]+); previous revision: [0-9.]+$/ =~ line
-		  newrev = Revision.create($1)
+		  newrev = RCS::Revision.create($1)
 		end
 	      }
 	    }
@@ -297,7 +297,7 @@ class CVS
 	  File.open(out) {|f|
 	    f.each_line {|line|
 	      if /\A([0-9.]+) +\(([^ ]+) +(..)-(...)-(..)\): / =~ line
-		rev = Revision.create($1)
+		rev = RCS::Revision.create($1)
 		author = $2
 		date = Time.gm($5.to_i, $4, $3.to_i)
 		contents = $'
@@ -428,9 +428,9 @@ class CVS
 	    File.open(out) {|f|
 	      f.each_line {|line|
 		if /^initial revision: ([0-9.]+)$/ =~ line
-		  newrev = Revision.create($1)
+		  newrev = RCS::Revision.create($1)
 		elsif /^new revision: ([0-9.]+); previous revision: [0-9.]+$/ =~ line
-		  newrev = Revision.create($1)
+		  newrev = RCS::Revision.create($1)
 		end
 	      }
 	    }
@@ -454,7 +454,7 @@ class CVS
 	    File.open(out) {|f|
 	      f.each_line {|line|
 		if /^new revision: ([0-9.]+); previous revision: [0-9.]+$/ =~ line
-		  newrev = Revision.create($1)
+		  newrev = RCS::Revision.create($1)
 		end
 	      }
 	    }
@@ -476,7 +476,7 @@ class CVS
 	    File.open(out) {|f|
 	      f.each_line {|line|
 		if /^new revision: delete; previous revision: ([0-9.]+)$/ =~ line
-		  prev_rev = Revision.create($1)
+		  prev_rev = RCS::Revision.create($1)
 		end
 	      }
 	    }

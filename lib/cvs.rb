@@ -14,9 +14,9 @@
   c.file('flim/DOODLE-VERSION').tags.each {|tag,rev| p [tag,rev.to_s]}  # cvs.rb handles attic-ness for you.
   c.file('semi/ChangeLog').parse_raw_log(CVS::Visitor::Dump.new)
   c.file('semi/ChangeLog').parse_log(CVS::Visitor::Dump.new)
-  c.file('apel/ChangeLog').checkout(CVS::Revision.create('1.1.1.1')) {|d, a| p a; print d}
+  c.file('apel/ChangeLog').checkout(RCS::Revision.create('1.1.1.1')) {|d, a| p a; print d}
   c.file('apel/ChangeLog').heads.each {|t, h| print "#{t||'*maintrunk*'} #{h}\n"}
-  c.file('flim/ChangeLog').annotate(CVS::Revision.create("1.30")) {|line, date, rev, author| p [line, date, rev.to_s, author]}
+  c.file('flim/ChangeLog').annotate(RCS::Revision.create("1.30")) {|line, date, rev, author| p [line, date, rev.to_s, author]}
 
   # needs write permission (works with remote repositories):
   d = CVS.create(':ext:foo@bar:/cvsroot//tst')
@@ -29,7 +29,7 @@
   # needs to be local repository:
   c = CVS.create('/home/foo/.cvsroot')
   c.file('cvs/ChangeLog').parse_raw_rcs(CVS::Visitor::Dump.new)
-  c.file('cvs/ChangeLog').fullannotate(CVS::Revision.create("1.30")) {|line, date1, rev1, author, rev2, date2| p [line, date1, rev1.to_s, author, rev2.to_s, date2]}
+  c.file('cvs/ChangeLog').fullannotate(RCS::Revision.create("1.30")) {|line, date1, rev1, author, rev2, date2| p [line, date1, rev1.to_s, author, rev2.to_s, date2]}
 
 =end
 
@@ -425,15 +425,8 @@ CVS file attribute class
 
 end
 
-require 'cvs/revision'
-require 'cvs/tempdir'
+require 'tempdir'
+require 'rcs'
 require 'cvs/parser'
 require 'cvs/remote'
 require 'cvs/local'
-require 'cvs/cache'
-require 'cvs/rcs'
-
-begin
-  require 'cvs/flex'
-rescue LoadError
-end

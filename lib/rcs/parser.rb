@@ -226,7 +226,7 @@ class RCS
 	return t
       else
 	unget t
-	raise ScanError.new("num expected: #{t.inspect}")
+	raise ScanError.new("id expected: #{t.inspect}")
       end
     end
 

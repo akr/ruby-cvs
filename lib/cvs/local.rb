@@ -124,7 +124,7 @@ class CVS
 	  else
 	    description += "\n" if description != '' && /\n\z/ !~ description
 	    state = 'Exp' if state == nil
-	    rev = Revision.create("1.1") if rev == nil
+	    rev = RCS::Revision.create("1.1") if rev == nil
 
 	    rcs = RCS.new(description).mkrev(contents, log, author, date, state, rev)
 	    f = simple_file(name, state == 'dead')
@@ -341,52 +341,30 @@ class CVS
       class RCSFileExist < StandardError
       end
       def create
-	rcsname = rcs_pathname
-	raise RCSFileExist.new(rcsname) if FileTest.exist? rcsname
-	tmpname = @dir.cvsroot.cvsroot + '/' + @dir.path + '/,' + @name + ','
 	rcs = yield
-	File.open(tmpname, File::Constants::WRONLY |
-			   File::Constants::TRUNC |
-			   File::Constants::CREAT |
-			   File::Constants::EXCL) {|f|
-	  begin
-	    rcs.dump(f)
-	    rcsname = rcs_pathname(@attic = rcs.attic?)
-	    dirname = File.dirname rcsname
-	    Dir.mkdir(dirname, 0775) unless FileTest.directory? dirname
-	    File.rename(tmpname, rcsname)
-	  ensure
-	    File.unlink tmpname if FileTest.exist? tmpname
-	  end
-	}
+	@attic = rcs.attic?
+	rcsname = rcs_pathname(@attic)
+	dirname = File.dirname rcsname
+	Dir.mkdir(dirname, 0775) unless FileTest.directory? dirname
+	RCS.create(rcsname) {rcs}
       end
 
-      class NotExist < StandardError
-      end
-      def replace
+      def update
         rcsname = rcs_pathname
-	raise NotExist.new(rcsname) unless FileTest.exist? rcsname
-	tmpname = @dir.cvsroot.cvsroot + '/' + @dir.path + '/,' + @name + ','
-	rcs = RCS.parse(rcsname)
-	yield rcs
-	File.open(tmpname, File::Constants::WRONLY |
-			   File::Constants::TRUNC |
-			   File::Constants::CREAT |
-			   File::Constants::EXCL) {|f|
-	  begin
-	    rcs.dump(f)
-	    newrcsname = rcs_pathname(@attic = rcs.attic?)
-	    File.rename(tmpname, newrcsname)
-	    File.unlink(rcsname) if newrcsname != rcsname
-	  ensure
-	    File.unlink tmpname if FileTest.exist? tmpname
-	  end
+	RCS.update(rcsname) {|rcs|
+	  yield rcs
+	  @attic = rcs.attic?
 	}
+	newrcsname = rcs_pathname(@attic)
+	if rcsname != newrcsname
+	  dirname = File.dirname newrcsname
+	  Dir.mkdir(dirname, 0775) unless FileTest.directory? dirname
+	  File.rename(rcsname, newrcsname)
+	end
       end
 
       def parse
         rcsname = rcs_pathname
-	raise NotExist.new(rcsname) unless FileTest.exist? rcsname
 	return RCS.parse(rcsname)
       end
 
@@ -440,18 +418,6 @@ class CVS
 	}
       end
 
-      def parse_rcs(visitor)
-        parse_raw_rcs(Parser::RCS::RCSVisitor.new(visitor))
-      end
-
-      def parse_raw_rcs(visitor)
-	@dir.read_lock {
-	  File.open(rcs_pathname) {|r|
-	    Parser::RCS.new(r).parse(visitor)
-	  }
-	}
-      end
-
       def mode
 	@dir.read_lock {
 	  s = File.stat(rcs_pathname)
@@ -485,228 +451,8 @@ class CVS
 --- fullannotate(rev[, branch]) {|line, date1, rev1, author, rev2, date2| ...}
 =end
       def fullannotate(rev, branch=nil, &block)
-	unless branch
-	  branch = rev.branch unless rev.on_trunk?
-	end
-
-	v = FullAnnotateVisitor.new(rev, branch, &block)
-	parse_rcs(DeltaFilter.new(v) {
-	  |diffroot, difftree, editroot, edittree, editleaf|
-	  trunk_revs = []
-	  branch_revs = []
-
-	  r = editroot
-	  while r
-	    trunk_revs << r
-	    r = difftree[r]
-	  end
-
-	  if branch
-	    r = nil
-	    editleaf.each_key {|r|
-	      break if r.branch == branch
-	    }
-	    r = branch.origin unless r
-	    while !r.on_trunk?
-	      branch_revs << r
-	      r = difftree[r]
-	    end
-	    branch_revs << r
-
-	    v.trunk_branch = r
-
-	    unless branch_revs.include?(rev) || (rev < r && trunk_revs.include?(rev))
-	      raise ArgumentError.new("#{rev.to_s} is not exist between #{editroot} to #{branch_revs[0].to_s}")
-	    end
-	  else
-	    unless trunk_revs.include?(rev)
-	      raise ArgumentError.new("#{rev.to_s} is not exist between #{editroot} to #{trunk_revs[-1].to_s}")
-	    end
-
-	    v.trunk_branch = rev
-	  end
-
-	  v.trunk_revs = trunk_revs
-	  v.branch_revs = branch_revs
-	  v.minrev = editroot
-	  v.maxrev = branch ? branch_revs[0] : diffroot
-	  v.difftree = difftree
-	  v.editroot = editroot
-
-	  revs = {}
-	  trunk_revs.each {|r| revs[r] = true}
-	  branch_revs.each {|r| revs[r] = true}
-	  revs
-	})
-      end
-
-      class FullAnnotateVisitor
-        def initialize(rev, branch, &block)
-	  @rev = rev
-	  @branch = branch
-	  @block = block
-	  @trunk_text = nil
-	  @branch_text = nil
-	  @target_text = nil
-	  @date = {}
-	  @author = {}
-	end
-	attr_accessor :trunk_revs, :branch_revs, :minrev, :maxrev, :trunk_branch, :difftree, :editroot
-
-        def delta(rev, date, author, state, branch, nextrev)
-	  @date[rev] = date
-	  @author[rev] = author
-	end
-
-        def deltatext(rev, log, text)
-	  if !@trunk_revs.empty? && @trunk_revs[-1] == rev
-	    @trunk_revs.pop
-	    unless @trunk_text
-	      @trunk_text = RCSText.new(text,
-	        lambda {|line| Line.new(line)})
-	    else
-	      # delta from rev0 to rev.
-	      rev0 = @difftree[rev]
-	      @trunk_text.patch!(text,
-	        lambda {|line| # this line is exist until rev.
-		  line = Line.new(line)
-		  unless @branch
-		    if @trunk_branch <= rev
-		      line.rev2 = rev
-		      line.date2 = @date[rev0]
-		    end
-		  end
-		  line
-		},
-		lambda {|line| # this line is exist since rev0.
-		  if line
-		    unless @trunk_branch <= rev
-		      line.rev1 = rev0
-		      line.date1 = @date[rev0]
-		    end
-		  end
-		})
-	    end
-	  end
-
-	  if !@branch_revs.empty? && @branch_revs[-1] == rev
-	    @branch_revs.pop
-	    unless @branch_text
-	      @branch_text = @trunk_text.dup
-	    else
-	      # delta from rev0 to rev.
-	      rev0 = @difftree[rev]
-	      @branch_text.patch!(text,
-	        lambda {|line| # this line is exist since rev.
-		  if @rev <= rev0
-		    false
-		  else
-		    line = Line.new(line)
-		    line.rev1 = rev
-		    line.date1 = @date[rev]
-		    line
-		  end
-		},
-	        lambda {|line| # this line is exist until rev0.
-		  if line
-		    if @rev <= rev0
-		      line.rev2 = rev0
-		      line.date2 = @date[rev]
-		    end
-		  end
-		})
-	    end
-	  end
-
-	  if rev == @rev
-	    if rev.on_trunk?
-	      @target_text = @trunk_text.dup
-	    else
-	      @target_text = @branch_text.dup
-	    end
-	  end
-	end
-
-        def finished
-	  @target_text.lines.each {|line|
-	    if line.rev1 == nil
-	      line.rev1 = @minrev
-	      line.date1 = @date[@editroot]
-	    end
-	    if line.rev2 == nil
-	      line.rev2 = @maxrev
-	      line.date2 = false
-	    end
-	  }
-	  @target_text.lines.each {|line|
-	    @block.call(line.line, line.date1, line.rev1, @author[line.rev1], line.rev2, line.date2)
-	  }
-	end
-
-	class Line
-	  def initialize(line)
-	    @line = line
-	    @rev1 = nil
-	    @rev2 = nil
-	    @date1 = nil
-	    @date2 = nil
-	  end
-	  attr_reader :line
-	  attr_accessor :rev1, :rev2, :date1, :date2
-	end
-      end
-
-      class DeltaFilter < Visitor
-        def initialize(visitor, &filter)
-	  @visitor = visitor
-	  @filter = filter
-	  @difftree = {}
-	  @diffroot = nil
-	  @edittree = {}
-	  @editroot = nil
-	  @editleaf = {}
-	end
-
-	def head(rev)
-	  @diffroot = rev
-	  @editleaf[rev] = true
-	end
-
-        def delta(rev, date, author, state, branch, nextrev)
-	  @visitor.delta(rev, date, author, state, branch, nextrev)
-
-	  if nextrev
-	    @difftree[nextrev] = rev if nextrev
-	    if rev.on_trunk?
-	      @edittree[rev] = nextrev
-	    else
-	      @edittree[nextrev] = rev
-	    end
-	  else
-	    if rev.on_trunk?
-	      @editroot = rev
-	    else
-	      @editleaf[rev] = true
-	    end
-	  end
-
-	  branch.each {|r|
-	    @difftree[r] = rev
-	    @edittree[r] = rev
-	  }
-	end
-
-	def delta_finished
-	  @revs = @filter.call(@diffroot, @difftree, @editroot, @edittree, @editleaf)
-	end
-
-        def deltatext(rev, log, text)
-	  @visitor.deltatext(rev, log, text) if @revs.include? rev
-	end
-
-	def finished
-	  return @visitor.finished
-	end
+	rcs = @dir.read_lock {RCS.parse(rcs_pathname)}
+	rcs.annotate(rev, branch, &block) 
       end
 
       class TagExist < StandardError
@@ -714,7 +460,7 @@ class CVS
       def mkbranch(rev, tag, state=nil)
 	@dir.write_lock {
 	  branch_rev = nil
-	  replace {|rcs|
+	  update {|rcs|
 	    nums = {}
 	    rcs.symbols.each {|t, r|
 	      raise TagExist.new(tag) if t == tag
@@ -731,7 +477,7 @@ class CVS
 	    while nums.include? i
 	      i += 2
 	    end
-	    branch_rev = Revision.create(rev.arr + [0, i])
+	    branch_rev = RCS::Revision.create(rev.arr + [0, i])
 	    rcs.symbols << [tag, branch_rev]
 	  }
 	  return newhead(tag, branch_rev, rev, state)
@@ -778,7 +524,7 @@ class CVS
 	def mkrev(contents, log, author=nil, date=nil, state=nil)
 	  state = 'Exp' if state == nil
 	  @file.dir.write_lock {
-	    @file.replace {|rcs|
+	    @file.update {|rcs|
 	      rcs.mkrev(contents, log, author, date, state, next_rev)
 	      if @default_branch_head
 		rcs.branch = nil
