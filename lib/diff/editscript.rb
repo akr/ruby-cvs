@@ -1,4 +1,5 @@
 require 'diff/rcsdiff'
+require 'diff/unidiff'
 
 class Diff
   class EditScript
@@ -86,7 +87,7 @@ class Diff
 
       len_a = Array === seq_or_len_a ? seq_or_len_a.length : seq_or_len_a
       len_b = Array === seq_or_len_b ? seq_or_len_b.length : seq_or_len_b
-      raise ArgumentError.new("length not equal") if len_a != len_b
+      raise ArgumentError.new("length not equal: #{len_a} != #{len_b}") if len_a != len_b
       len = len_a
 
       mark = ((Array === seq_or_len_a) ?
