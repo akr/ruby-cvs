@@ -1,0 +1,245 @@
+#!/usr/local/bin/ruby
+
+## VizTree visualize branch relations in a module.
+
+# VizTree generates a graph of branches in the format handled by `dot'
+# utility in GraphViz <URL:http://www.research.att.com/sw/tools/graphviz/>.
+# Since ImageMagick <URL:http://www.imagemagick.org/> recognizes the format,
+# `display' utility can handle it if `dot' and `gs' is available. 
+# (Internaly, the conversion is done through PostScript with
+# ImageMagick 5.1.1.)
+
+## Usage:
+# viztree [options] file,v|directory ...
+# option: -h : print this help message.
+#         -a : show all relations.
+
+## Example:
+# viztree -a ~/.cvsroot/tmp/apel|display
+# viztree ~/.cvsroot/tmp/flim|dot -Tpng
+# viztree ~/.cvsroot/tmp/gnus|dot -Tsvg
+# viztree :fork:$HOME/.cvsroot//ccvs//ChangeLog|display
+
+## ToDo:
+# visualize trees other than branch tree: directory tree and revision tree.
+
+## Algorithm in brief:
+# for each RCS file extract ancestor-decendant relations as follows:
+#   extract all branch tags and corresponding revision number.
+#   for all branch tag T1 whose revision number is R1
+#     for all branch tag T2 whose revision number R2 is a prefix of R1
+#       T2 is ancestor of T1
+# merge ancestor-decendant relations of all RCS files as a graph G
+# sort G topologically
+# for each tag T which has one or more ancestors, select a parent tag
+#   the parent tag is one of ancestor tag which is most closest to T in
+#   topologically sorted order of G
+# tag-parent relation forms tree and it is result.
+
+require 'cvs'
+require 'getoptlong'
+
+MainTrunk = '*maintrunk*'
+Opt = {}
+
+class Node
+  def initialize(tag)
+    @tag = tag
+    @ancestors = []
+  end
+  attr_reader :tag
+  attr_accessor :ancestors
+
+  TagMap = {MainTrunk => Node.new(MainTrunk)}
+
+  def self.[](tag)
+    return TagMap.fetch(tag) {TagMap[tag] = Node.new(tag)}
+  end
+
+  # tsort uses an algorithm presented by following article.
+  #
+  #@Article{Tarjan:1972:DFS,
+  #  author =       "R. E. Tarjan",
+  #  key =          "Tarjan",
+  #  title =        "Depth First Search and Linear Graph Algorithms",
+  #  journal =      j-SIAM-J-COMPUT,
+  #  volume =       "1",
+  #  number =       "2",
+  #  pages =        "146--160",
+  #  month =        jun,
+  #  year =         "1972",
+  #  CODEN =        "SMJCAT",
+  #  ISSN =         "0097-5397 (print), 1095-7111 (electronic)",
+  #  bibdate =      "Thu Jan 23 09:56:44 1997",
+  #  bibsource =    "Parallel/Multi.bib, Misc/Reverse.eng.bib",
+  #}
+
+  def tsort(order_cell, order_hash, node_stack, components)
+    order = (order_cell[0] += 1)
+    reachable_minimum_order = order;
+    order_hash[@tag] = order;
+    stack_length = node_stack.length;
+    node_stack << @tag
+
+    @ancestors.each {|nexttag|
+      nextnode = TagMap[nexttag]
+      nextorder = order_hash[nexttag]
+      if nextorder != -1
+        if nextorder < reachable_minimum_order
+	  reachable_minimum_order = nextorder
+	end
+      else
+	sub_minimum_order = nextnode.tsort(order_cell, order_hash, node_stack, components)
+	if sub_minimum_order < reachable_minimum_order
+	  reachable_minimum_order = sub_minimum_order
+	end
+      end
+    }
+
+    if order == reachable_minimum_order
+      scc = node_stack[stack_length .. -1]
+      node_stack[stack_length .. -1] = []
+      components << scc
+      scc.each {|tag|
+        order_hash[tag] = TagMap.size
+      }
+    end
+    return reachable_minimum_order;
+  end
+
+  def self.tsort
+    len = TagMap.size
+    order_cell = [0]
+    order_hash = {}
+    node_stack = []
+    components = []
+
+    order_hash.default = -1
+
+    TagMap.each {|tag, node|
+      if order_hash[tag] == -1
+        node.tsort(order_cell, order_hash, node_stack, components)
+      end
+    }
+
+    return components
+  end
+end
+
+module TreeGenerator
+  VendorBranches = {}
+
+  def self.gentree
+    order = {}
+    (tagss = Node.tsort).each_index {|i|
+      tagss[i].each {|tag|
+	order[tag] = i
+      }
+    }
+    print "digraph g { rankdir=LR;\n"
+    tagss.each_index {|i|
+      tags = tagss[i]
+      print "subgraph \"cluster_#{i}\" { color=blue;\n" if tags.length != 1 && Opt[:all]
+      tags.each {|tag|
+	if VendorBranches[tag]
+	  print "\"#{tag}\" [shape=box];\n"
+	else
+	  print "\"#{tag}\";\n"
+	end
+      }
+      print "}\n" if tags.length != 1 && Opt[:all]
+      tags.each {|tag|
+	parent_tag = nil
+	parent_order = -1
+	node_order = order[tag]
+	node = Node[tag]
+	node.ancestors.each {|a|
+	  if parent_order < order[a] && order[a] < node_order
+	    parent_tag = a
+	    parent_order = order[a]
+	  end
+	}
+	print "\"#{parent_tag}\" -> \"#{tag}\";\n" if parent_tag
+	if Opt[:all]
+	  node.ancestors.each {|a|
+	    print "\"#{a}\" -> \"#{tag}\" [color=red];\n" if a != parent_tag
+	  }
+	end
+      }
+    }
+    print "}\n"
+  end
+
+  def self.traverse(c)
+    case c
+    when CVS::D
+      c.listfile.each {|f| traverse(f)}
+      c.listdir.each {|d| traverse(d)}
+    when CVS::F
+      process_tags(c.tags)
+    end
+  end
+
+  def self.process_tags(tags)
+    branches = []
+    rev2tag = {}
+    vendorbranches = []
+    tags.each {|tag, rev|
+      tags[tag] = rev.demagicalize
+    }
+    tags.each {|tag, rev|
+      next unless rev.branch?
+
+      branches << tag
+      vendorbranches << tag if rev.vendor_branch?
+
+      ts = rev2tag.fetch(rev) {rev2tag[rev] = []}
+      ts << tag
+    }
+
+    branches.each {|b|
+      rev = tags[b]
+      next if rev.branch_level == 0
+      rev = rev.origin.branch
+      as = []
+      as << MainTrunk if rev.branch_level == 0
+      as += rev2tag.fetch(rev, [])
+      Node[b].ancestors |= as
+    }
+    vendorbranches.each {|v|
+      VendorBranches[v] = true
+    }
+  end
+end
+
+def usage
+  STDERR.print <<"End"
+usage: viztree [options] file,v|directory|cvsroot//module ...
+option: -h : print this help message.
+        -a : show all relations.
+End
+  exit 1
+end
+
+def main
+  optionparser = GetoptLong.new(
+    [GetoptLong::NO_ARGUMENT, '-h'],
+    [GetoptLong::NO_ARGUMENT, '-a'])
+
+  optionparser.each {|opt, arg|
+    if opt == '-h'
+      usage
+    elsif opt == '-a'
+      Opt[:all] = true
+    else
+      raise Exception.new("unimplemented option: #{opt}")
+    end
+  }
+
+  ARGV.each {|arg|
+    TreeGenerator.traverse CVS.create(arg)
+  }
+  TreeGenerator.gentree
+end
+
+main
