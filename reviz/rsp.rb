@@ -84,17 +84,17 @@ class RSP
   def RSP.check_code(code)
     err = Thread.start {
       $SAFE=4
-      begin
-	eval "lambda { #{code}\n}"
-	nil
-      rescue SyntaxError
-	$!
-      end
+      loop {
+	begin
+	  eval("BEGIN {break}; #{code}")
+	rescue SyntaxError
+	  break $!
+	end
+	break
+      }
     }.value
 
-    if err
-      raise err
-    end
+    raise err if err
   end
 
   def RSP.load(filename)
@@ -205,7 +205,7 @@ End
 	  when /\A!/
 	    class_code << $' << "\n"
 	  when /\A=/
-	    gen_body << "rsp_buf << rsp_hash.fetch((#{$'}).to_s) {|str| rsp_hash[str] = str}\n"
+	    gen_body << "rsp_buf << rsp_hash.fetch((#{$'}).to_s) {|rsp_str| rsp_hash[rsp_str] = rsp_str}\n"
 	  when /\A@\s*/
 	    data = $'
 	    case data
