@@ -8,14 +8,14 @@ class CVS
     end
 
     def top_dir
-      return D.new(self, '.')
+      return D.new(self, nil, '.')
     end
 
     class D < R::D
       Info = ".#{Socket.gethostname}.#{$$}"
 
-      def initialize(cvsroot, path)
-        super(cvsroot, path)
+      def initialize(cvsroot, parent, path)
+        super(cvsroot, parent, path)
 
 	@rcsdir = @cvsroot.cvsroot + '/' + @path
 
@@ -28,7 +28,7 @@ class CVS
       end
 
       def simple_dir(name)
-	return D.new(@cvsroot, @path + '/' + name)
+	return D.new(@cvsroot, self, @path + '/' + name)
       end
 
       def simple_file(name, attic=nil)
@@ -92,6 +92,44 @@ class CVS
 	  end
 	  r.close
 	  Process.waitpid(pid, 0)
+	}
+      end
+
+      def mkdir(name)
+	write_lock {
+	  # xxx: should check name,v and Attic/name,v.
+	  Dir.mkdir(@rcsdir + '/' + name)
+	  return simple_dir(name)
+	}
+      end
+
+=begin
+--- mkfile(name, contents, log[, description[, branch_tag[, author[, date[, state]]]]])
+=end
+      def mkfile(name, contents, log, description='', branch_tag=nil, author=nil, date=nil, state=nil)
+	write_lock {
+	  if branch_tag
+	    h = mkfile(name, '', description, "file #{name} was initially added on branch #{branch_tag}.\n", nil, author, date, 'dead')
+	    h = h.file.mkbranch(h.head_rev, branch_tag)
+	    h.add(contents, log, author, date)
+	    return h
+	  else
+	    state = 'Exp' if state == nil
+	    work = TempDir.create
+	    work.open(name, 'w') {|f| f.print contents}
+	    f = simple_file(name, state == 'dead')
+	    command = ['ci']
+	    command << "-q"
+	    command << "-t-#{description}"
+	    command << "-m#{log}"
+	    command << "-w#{author}" if author
+	    command << "-d#{date}" if date
+	    command << "-s#{state}"
+	    command << f.rcs_pathname
+	    command << work.path(name)
+	    system *command
+	    return f.newhead(nil, nil, Revision.create("1.1"), state)
+	  end
 	}
       end
 
@@ -267,18 +305,21 @@ class CVS
     class F < R::F
       def initialize(dir, name, attic=nil)
         super(dir, name, attic)
-	if attic == nil
-	  if FileTest.exist?(rcs_pathname)
-	    @attic = false
-	  elsif FileTest.exist?(rcs_pathname(true))
-	    @attic = true
-	  end
-	end
       end
 
       def rcs_pathname(attic=nil)
-	attic = @attic if attic == nil
-	return @dir.cvsroot.cvsroot + '/' + @dir.path + (attic ? '/Attic/' : '/') + @name + ',v'
+	prefix = @dir.cvsroot.cvsroot + '/' + @dir.path + '/'
+	suffix = @name + ',v'
+
+	if attic != nil
+	  return prefix + (attic ?  'Attic/' : '') + suffix
+	elsif FileTest.exist? (prefix + suffix)
+	  return prefix + suffix
+	elsif FileTest.exist? (prefix + 'Attic/' + suffix)
+	  return prefix + 'Attic/' + suffix
+	else
+	  return prefix + (@attic ?  'Attic/' : '') + suffix
+	end
       end
 
       def parse_raw_log(visitor, opts=[])
@@ -619,10 +660,37 @@ class CVS
 	end
       end
 
+      def mkbranch(rev, tag, state='Exp')
+	@dir.write_lock {
+	  nums = {}
+	  tags.each {|t,r|
+	    if r.branch? && r.origin == rev
+	      n = r.arr[-1]
+	      nums[n] = n
+	    end
+	  }
+	  i = 2
+	  while nums.include? i
+	    i += 2
+	  end
+
+	  branch_rev = Revision.create(rev.arr + [0, i])
+	  command = ['rcs']
+	  command << "-q"
+	  command << "-n#{tag}:#{branch_rev.to_s}"
+	  command << rcs_pathname
+	  system *command
+	  return newhead(tag, branch_rev, rev, state)
+	}
+      end
+
       def heads
 	return parse_log(HeadsVisitor.new(self, Head))
       end
 
+      def newhead(branch_tag, branch_rev, head_rev, state)
+        return Head.new(self, branch_tag, branch_rev, head_rev, state)
+      end
       class Head < R::F::Head
         def initialize(file, branch_tag, branch_rev, head_rev, state)
 	  super(file, branch_tag, branch_rev, head_rev, state)
@@ -638,7 +706,6 @@ class CVS
 	    super("status: #{status}")
 	  end
 	end
-
 
 	def run_ci(contents, log, desc, state, author, date)
 	  @work = TempDir.create unless @work
@@ -682,6 +749,8 @@ class CVS
         def add(contents, log, author=nil, date=nil)
 	  raise AlreadyExist.new("already exist: #{@file.inspect}:#{@head_rev}") if @state != 'dead'
 	  run_ci(contents, log, '', 'Exp', author, date)
+	  @state = 'Exp'
+	  # xxx: move file from attic if properly.
 	  return @head_rev = next_rev
 	end
 
@@ -701,6 +770,8 @@ class CVS
 	  raise NotExist.new("not exist: #{@file.inspect}:#{@head_rev}") if @state == 'dead'
 	  contents = @file.checkout(@head_rev) {|c, a| c}
 	  run_ci(contents, log, '', 'dead', author, date)
+	  @state = 'dead'
+	  # xxx: move file into attic if properly.
 	  return @head_rev = next_rev
 	end
       end

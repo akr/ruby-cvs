@@ -9,7 +9,7 @@ class CVS
     attr_accessor :cvsroot
 
     def top_dir
-      return D.new(self, '.')
+      return D.new(self, nil, '.')
     end
 
     class WorkDir < DelegateClass(TempDir)
@@ -33,8 +33,9 @@ class CVS
     end
 
     class D < CVS::D
-      def initialize(cvsroot, path)
+      def initialize(cvsroot, parent, path)
 	@cvsroot = cvsroot
+	@parent = parent
 	@path = path.sub(/\A\.\//, '')
 	@entries = {}
       end
@@ -85,10 +86,18 @@ class CVS
 	end
       end
 
+      def top?
+        return @parent == nil
+      end
+
+      def parent
+	return @parent
+      end
+
       # Maybe `create_dir' is better name because it is a factory method.
       # But it is confusing to a function which create directory in the repository.
       def simple_dir(name)
-	return D.new(@cvsroot, @path + '/' + name)
+	return D.new(@cvsroot, self, @path + '/' + name)
       end
 
       def simple_file(name, attic=nil)
@@ -146,6 +155,45 @@ class CVS
 	  end
 	  r.close
 	})
+      end
+
+      def mkdir(name)
+	run_cvs(['add', name], '/dev/null', '/dev/null', [], lambda {|wd|
+	  wd.mkdir(name)
+	})
+	return simple_dir(name)
+      end
+
+      def mkfile(name, contents, log, description='', branch_tag=nil)
+	# `description' is ignored with a remote repository because
+	# `cvs commit' doesn't send CVS/xxx,t to the server.  It is
+	# possible to send the description to the server if `add' and
+	# `commit' request is sent on SINGLE connection.  But it is
+	# impossible with cvs COMMAND and it requires to talk CVS
+	# client/server protocol directly.
+	newrev = nil
+	r, w = IO.pipe
+	r.fcntl(Fcntl::F_SETFD, r.fcntl(Fcntl::F_GETFD) | 1)
+	w.fcntl(Fcntl::F_SETFD, w.fcntl(Fcntl::F_GETFD) | 1)
+	run_cvs(['commit', '-f', '-m', log, name], w, '/dev/null', [],
+	  lambda {|wd|
+	    wd.open("CVS/#{name},t", 'w') {|f| f.print(description)}
+	    wd.open(name, 'w') {|f| f.print(contents)}
+	    wd.entries[name] = "0//-ko/#{branch_tag && ('T' + branch_tag)}"
+	    wd.update_entries
+	  },
+	  lambda {|wd|
+	    w.close
+	    while line = r.gets
+	      if /^initial revision: ([0-9.]+)$/ =~ line
+		newrev = Revision.create($1)
+	      elsif /^new revision: ([0-9.]+); previous revision: [0-9.]+$/ =~ line
+		newrev = Revision.create($1)
+	      end
+	    end
+	    r.close
+	  })
+	return simple_file(name, branch_tag != nil).newhead(branch_tag, newrev.branch, newrev, 'Exp')
       end
 
       def to_s
@@ -231,6 +279,11 @@ class CVS
 	})
       end
 
+      def mkbranch(rev, tag)
+        @dir.run_cvs(['tag', '-b', '-r' + rev.to_s, tag, @name], '/dev/null', '/dev/null')
+	return head(tag)
+      end
+
       def head(tag=nil)
         return heads[tag]
       end
@@ -286,6 +339,9 @@ class CVS
 	end
       end
 
+      def newhead(branch_tag, branch_rev, head_rev, state)
+	return Head.new(self, branch_tag, branch_rev, head_rev, state)
+      end
       class Head < CVS::F::Head
         def initialize(file, branch_tag, branch_rev, head_rev, state)
 	  @file = file
@@ -294,6 +350,7 @@ class CVS
 	  @head_rev = head_rev
 	  @state = state
 	end
+	attr_reader :file, :branch_tag, :branch_rev, :head_rev, :state
 
 	def next_rev
 	  if @branch_tag

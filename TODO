@@ -1,15 +1,13 @@
 * interface
-  * create new file - new maintrunk.
-  * create new branch.
-  * create new directory.
-  * keyword expantion.
+  * keyword expansion.
 
   * history.
 
   * diff.
 
 * remote mode
-  * don't use CVS by talking CVS client/server protocol.
+  * talk CVS client/server protocol directly to avoid using CVS command.
+    (it is required to specify `description' when adding a file.)
   * make working directories distinguishable by a server.
 
 * local mode

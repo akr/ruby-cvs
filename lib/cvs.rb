@@ -21,11 +21,12 @@
   c.file('flim/ChangeLog').annotate(CVS::Revision.create("1.30")) {|line, date, rev, author| p [line, date, rev.to_s, author]}
 
   # needs write permission (works with remote repositories):
-  c = CVS.create(':ext:foo@bar:/cvsroot')
-  h = c.file('tst/a').head
-  h.checkin('modified contents', 'modified')
-  h.remove('removed')
-  h.add('re-added contents', 'added')
+  d = CVS.create(':ext:foo@bar:/cvsroot//tst')
+  d.mkdir('subdirname')
+  h = d.mkfile('a', 'initial contents', 'first log')
+  h.checkin('modified contents', 'modified log')
+  h.remove('removed log')
+  h.add('re-added contents', 'added log')
 
   # needs to be local repository:
   c = CVS.create('/home/foo/.cvsroot')
@@ -182,6 +183,23 @@ Abstract CVS directory class.
     end
 
 =begin
+--- top?
+    returns true if self is a top directory of the repository.
+=end
+    def top?
+      raise NotImplementedError.new
+    end
+
+=begin
+--- parent
+    returns a parent directory.
+    If self is a top directory, nil is returned.
+=end
+    def parent
+      raise NotImplementedError.new
+    end
+
+=begin
 --- simple_dir(name)
     creates a CVS directory object for direct subdirectory.
 =end
@@ -246,6 +264,22 @@ Abstract CVS directory class.
       listfile.each {|f|
         f.parse_log(visitor, opts)
       }
+    end
+
+=begin
+--- mkdir(directory_name)
+    creates a directory under the directory.
+=end
+    def mkdir(name)
+      raise NotImplementedError.new
+    end
+
+=begin
+--- mkfile(file_name, contents, log[, description[, branch_tag]])
+    creates a file in the directory.
+=end
+    def mkfile(name, contents, log, description='', branch_tag='')
+      raise NotImplementedError.new
     end
   end
 
@@ -313,6 +347,13 @@ Abstract CVS file class.
 --- annotate(rev) {|line, date, rev, author| ...}
 =end
     def annotate(rev)
+      raise NotImplementedError.new
+    end
+
+=begin
+--- mkbranch(rev, tag)
+=end
+    def mkbranch(rev, tag)
       raise NotImplementedError.new
     end
 
