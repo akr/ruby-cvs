@@ -29,6 +29,16 @@
   </dl>
   </body>
   </html>
+
+== Supported syntax:
+
+: <%-- comment --%>
+: <%# comment %>
+: <%! declaration %>
+: <%= expression %>
+: <% code fragment %>
+: <%@ include file="..." %>
+
 =end
 
 class Array
@@ -54,7 +64,7 @@ class RSP
     rescue Errno::ENOENT
     end
 
-    code = compile_code(open(filename) {|f| f.read})
+    code = compile_code(filename)
 
     begin
       tmpname = compiledname + ".#{$$}"
@@ -71,53 +81,13 @@ class RSP
   end
 
   def RSP.load_source(filename)
-    return eval compile_code(open(filename) {|f| f.read})
+    return eval compile_code(filename)
   end
 
-  def RSP.compile_code(template)
+  def RSP.compile_code(filename)
     class_code = StringBuffer.new
     gen_body = StringBuffer.new
-
-    state = :contents
-    linenumber = 1
-    line_open = nil
-    template.split(/(<%|%>)/).each {|data|
-      case state
-      when :contents
-	case data
-        when '<%'
-	  state = :code
-	  line_open = linenumber
-        when '%>'
-	  raise RSPError.new("#{linenumber}: unmatched '%>'")
-	else
-	  gen_body << 'buf << ' << data.dump << "\n"
-	  data.tr!("^\n", '')
-	  linenumber += data.length
-	end
-      when :code
-	case data
-        when '<%'
-	  raise RSPError.new("#{linenumber}: nested '<%'")
-        when '%>'
-	  state = :contents
-	  line_open = nil
-	else
-	  case data
-	  when /\A!/
-	    class_code << $' << "\n"
-	  when /\A=/
-	    gen_body << "buf << (#{$'}).to_s\n"
-	  when /\A#/
-	  else
-	    gen_body << data << "\n"
-	  end
-	  linenumber += data.tr("^\n", '').length
-	end
-      end
-    }
-    raise RSPError.new("#{line_open}: non-terminated Ruby code") if state != :contents
-
+    compile_template(class_code, gen_body, filename)
     return <<"End"
 Class.new.class_eval {
 def initialize(obj)
@@ -153,6 +123,59 @@ self
 End
   end
   class RSPError < StandardError
+  end
+
+  def RSP.compile_template(class_code, gen_body, filename)
+    template = open(filename) {|f| f.read}
+
+    state = :contents
+    linenumber = 1
+    line_open = nil
+    template.split(/(<%|%>)/).each {|data|
+      case state
+      when :contents
+	case data
+        when '<%'
+	  state = :code
+	  line_open = linenumber
+        when '%>'
+	  raise RSPError.new("#{filename}:#{linenumber}: unmatched '%>'")
+	else
+	  gen_body << 'buf << ' << data.dump << "\n"
+	  data.tr!("^\n", '')
+	  linenumber += data.length
+	end
+      when :code
+	case data
+        when '<%'
+	  raise RSPError.new("#{filename}:#{linenumber}: nested '<%'")
+        when '%>'
+	  state = :contents
+	  line_open = nil
+	else
+	  case data
+	  when /\A!/
+	    class_code << $' << "\n"
+	  when /\A=/
+	    gen_body << "buf << (#{$'}).to_s\n"
+	  when /\A@\s*/
+	    data = $'
+	    case data
+	    when /include\s+file="(.*)"\s*\z/
+	      RSP.compile_template(class_code, gen_body,
+		File.dirname(filename) + '/' + $1)
+	    else
+	      raise RSPError.new("#{filename}:#{linenumber}: unknown directive: #{data}")
+	    end
+	  when /\A#/, /\A--[\000-\377]*--\z/
+	  else
+	    gen_body << data << "\n"
+	  end
+	  linenumber += data.tr("^\n", '').length
+	end
+      end
+    }
+    raise RSPError.new("#{filename}:#{line_open}: non-terminated Ruby code") if state != :contents
   end
 
   def RSP.[](hash)
