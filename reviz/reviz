@@ -18,8 +18,6 @@ class ReViz
     'only_with_tag' => nil,
   }
 
-  CheckoutMagicPath = '~checkout~'
-
   def initialize
     @cgi = CGI.new
   end
@@ -47,13 +45,6 @@ class ReViz
       next if name == '.' || name == '..'
       path << name
     }
-
-    if path[0] == CheckoutMagicPath
-      @checkoutmagic = true
-      path.shift
-    else
-      @checkoutmagic = false
-    end
 
     @cvsdir = @cvsroot.top_dir
     @cvsfile = nil
