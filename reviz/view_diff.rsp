@@ -1,8 +1,23 @@
-<html>
+<%!
+MARK = {
+  :common => ' ',
+  :add => '+',
+  :del => '-'
+}
+%><html>
 <head>
 <title>diff</title>
 </head>
 <body>
-<pre><%=CGI::escapeHTML diff%></pre>
+<pre>+++ <%=path%> <%=mtime1.gmtime.strftime('%Y/%m/%d %H:%M:%S')%> <%=rev1%>
+--- <%=path%> <%=mtime2.gmtime.strftime('%Y/%m/%d %H:%M:%S')%> <%=rev2%>
+<%
+hunks.each{|line1_beg, line1_len, line2_beg, line2_len, hunk|
+  %>@@ -<%=line1_beg%>,<%=line1_len%> +<%=line2_beg%>,<%=line2_len%> @@
+<%hunk.each {|t, line|
+  %><%=MARK[t]%><%=CGI::escapeHTML line%><%
+  }
+}
+%></pre>
 </body>
 </html>

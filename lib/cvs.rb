@@ -389,6 +389,7 @@ require 'cvs/parser'
 require 'cvs/remote'
 require 'cvs/local'
 require 'cvs/cache'
+require 'cvs/rcs'
 
 begin
   require 'cvs/flex'

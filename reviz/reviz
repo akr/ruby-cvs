@@ -614,12 +614,108 @@ class ReViz
     f2.print c2
     f2.close
 
-    diff = IO.popen("diff -u #{f1.path} #{f2.path}") {|f| f.read || ''}
+    diff = []
+    orig = CVS::RCSText.split(c1)
+    orig.unshift nil
+    orig_beg = 1
+    IO.popen("diff -n #{f1.path} #{f2.path}") {|f|
+      CVS::RCSText.parse_diff(f) {|com, beg, len, adds|
+	if com == :del
+	  if orig_beg < beg
+	    diff << [:common, orig[orig_beg...beg]]
+	  end
+	  diff << [:del, orig[beg, len]]
+	  orig_beg = beg + len
+	else
+	  if orig_beg <= beg
+	    diff << [:common, orig[orig_beg..beg]]
+	    orig_beg = beg + 1
+	  end
+	  diff << [:add, adds]
+	end
+      }
+    }
+    diff << [:common, orig[orig_beg..-1]] if orig_beg < orig.length
+
+    hunks = []
+    split_diff(diff) {|line1_beg, line1_len, line2_beg, line2_len, hunk|
+      hunks << [line1_beg, line1_len, line2_beg, line2_len, hunk]
+    }
+
     return RSP.load("#{RSP_DIR}/view_diff.rsp").new(
       RSP[
-	:diff => diff
+	:path => @cvsfile.path,
+	:rev1 => r1.to_s,
+	:rev2 => r2.to_s,
+	:mtime1 => a1.mtime,
+	:mtime2 => a2.mtime,
+	:hunks => hunks
       ]).gen
   end
+
+  def split_diff(diff, context=3)
+    return if diff.empty?
+
+    t, lines = diff[0]
+    if t == :common
+      b1 = 1
+      line1_beg = line2_beg = lines.length + 1
+    else
+      b1 = 0
+      line1_beg = line2_beg = 1
+    end
+
+    while b1 < diff.length
+      i = b1 + 1
+      while i < diff.length
+	t, lines = diff[i]
+	if t == :common && context * 2 < lines.length
+	  break
+	end
+	i += 1
+      end
+      b2 = i - 1
+
+      line1_end = line1_beg
+      line2_end = line2_beg
+      hunk = []
+      if 0 < b1
+	t, lines = diff[b1 - 1]
+	lines = lines[-context..-1] if context < lines.length
+	hunk.concat lines.collect {|line| [t, line]}
+	line1_beg -= lines.length
+	line2_beg -= lines.length
+      end
+      (b1..b2).each {|i|
+	t, lines = diff[i]
+	hunk.concat lines.collect {|line| [t, line]}
+	if t == :add
+	  line2_end += lines.length
+	elsif t == :del
+	  line1_end += lines.length
+	else
+	  line1_end += lines.length
+	  line2_end += lines.length
+	end
+      }
+      if b2 + 1 < diff.length
+	t, lines = diff[b2 + 1]
+	line1_next = line1_end + lines.length
+	line2_next = line2_end + lines.length
+	lines = lines[0...context] if context < lines.length
+	hunk.concat lines.collect {|line| [t, line]}
+	line1_end += lines.length
+	line2_end += lines.length
+      end
+
+      yield line1_beg, line1_end - line1_beg, line2_beg, line2_end - line2_beg, hunk
+
+      b1 = b2 + 2
+      line1_beg = line1_next
+      line2_beg = line2_next
+    end
+  end
+
 end
 
 ReViz.new.main
