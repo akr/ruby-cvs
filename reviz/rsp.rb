@@ -143,7 +143,7 @@ End
     return RSP.new(hash)
   end
 
-  def initialize(hash)
+  def initialize(hash={})
     @hash = hash.dup
   end
 
@@ -151,11 +151,13 @@ End
     obj.instance_eval(&block)
   end
 
-  def method_missing(msg_id, *args)
-    if @hash.include? msg_id
-      return @hash[msg_id]
+  def method_missing(sym, *args)
+    if @hash.include? sym
+      return @hash[sym]
+    elsif /=\z/ =~ (str = sym.id2name)
+      @hash[$`.intern] = args[0]
     else
-      raise ArgumentError.new("#{msg_id} not found")
+      raise ArgumentError.new("#{sym} not found")
     end
   end
 
