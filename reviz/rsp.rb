@@ -44,6 +44,8 @@
 
 =end
 
+require 'md5'
+
 class Array
   def each_with(&block)
     proc = eval("lambda {|v, b| with(v, &b)}", block)
@@ -108,8 +110,9 @@ class RSP
     gen_body = StringBuffer.new
     depend = []
     compile_template(class_code, gen_body, filename, depend)
-    return <<"End"
-# #{depend.join(' ')}
+    return depend.collect {|name, mtime, md5| <<"End"}.join + <<"End"
+# #{mtime.gmtime.strftime('%Y/%m/%d %H:%M:%S')} #{md5} #{name}
+End
 require 'rsp'
 Class.new.class_eval {
 def initialize(obj)
@@ -163,8 +166,8 @@ End
   end
 
   def RSP.compile_template(class_code, gen_body, filename, depend=[], strhash={})
-    depend << filename
-    template = open(filename) {|f| f.read}
+    mtime, template = open(filename) {|f| [f.stat.mtime, f.read]}
+    depend << [filename, mtime, MD5.md5("abc").hexdigest]
 
     state = :contents
     linenumber = 1
