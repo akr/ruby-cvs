@@ -24,6 +24,8 @@ http://cvs.m17n.org/~akr/ruby-cvs/
 * Samples
 
   ReViz: ViewCVS like CGI script.  See reviz/*.
+  Working example: http://cvs.m17n.org/cgi-bin/reviz 
+
   VizTree: Branch Tree Visualizer.  See viztree.
 
 * Author
