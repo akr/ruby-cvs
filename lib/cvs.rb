@@ -1,7 +1,6 @@
 =begin
 = cvs.rb - CVS library for Ruby.
 
-
 == Example
   require 'cvs'
 

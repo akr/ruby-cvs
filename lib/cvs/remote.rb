@@ -13,10 +13,14 @@ class CVS
       return D.new(self, nil, '.')
     end
 
+    def newworkdir(dir)
+      return WorkDir.new(dir, TempDir)
+    end
+
     class WorkDir < DelegateClass(TempDir)
-      def initialize(dir)
+      def initialize(dir, parent)
 	@dir = dir
-	super(TempDir.create)
+	super(parent.create)
 	self.mkdir('CVS')
 	self.open('CVS/Root', 'w') {|f| f.print "#{@dir.cvsroot.cvsroot}\n"}
 	self.open('CVS/Repository', 'w') {|f| f.print "#{@dir.path}\n"}
@@ -44,7 +48,7 @@ class CVS
 
       def with_work
 	unless @work
-	  @work = WorkDir.new(self)
+	  @work = @cvsroot.newworkdir(self)
 	end
 	yield @work
       end

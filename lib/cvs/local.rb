@@ -38,11 +38,13 @@ class CVS
       def listdir
 	res = []
 	dir = @rcsdir
-        Dir.foreach(dir) {|name|
-	  next if /\A(\.|\.\.|CVS|Attic)\z/ =~ name
-	  if FileTest.directory?(dir + '/' + name)
-	    res << simple_dir(name)
-	  end
+	read_lock {
+	  Dir.foreach(dir) {|name|
+	    next if /\A(\.|\.\.|CVS|Attic)\z/ =~ name
+	    if FileTest.directory?(dir + '/' + name)
+	      res << simple_dir(name)
+	    end
+	  }
 	}
 	return res
       end
@@ -50,48 +52,52 @@ class CVS
       def listfile
 	res = []
 	dir = @rcsdir
-        Dir.foreach(dir) {|name|
-	  next if /\A(\.|\.\.|CVS|Attic)\z/ =~ name
-	  if /,v\z/ =~ name && FileTest.file?(dir + '/' + name)
-	    res << simple_file($`, false)
-	  end
-	}
-	dir += '/Attic'
-	begin
+	read_lock {
 	  Dir.foreach(dir) {|name|
 	    next if /\A(\.|\.\.|CVS|Attic)\z/ =~ name
 	    if /,v\z/ =~ name && FileTest.file?(dir + '/' + name)
-	      res << simple_file($`, true)
+	      res << simple_file($`, false)
 	    end
 	  }
-	rescue Errno::ENOENT
-	end
+	  dir += '/Attic'
+	  begin
+	    Dir.foreach(dir) {|name|
+	      next if /\A(\.|\.\.|CVS|Attic)\z/ =~ name
+	      if /,v\z/ =~ name && FileTest.file?(dir + '/' + name)
+		res << simple_file($`, true)
+	      end
+	    }
+	  rescue Errno::ENOENT
+	  end
+	}
 	return res
       end
 
       def parse_raw_log(visitor, opts=[])
-	rcs_pathnames = listfile.collect {|f| f.rcs_pathname}
-	return if rcs_pathnames.empty?
-	with_work {|t|
-	  r, w = IO.pipe
-	  pid = fork {
-	    STDOUT.reopen(w)
-	    open('/dev/null', 'w') {|f| STDERR.reopen(f)}
-	    r.close
+	read_lock {
+	  rcs_pathnames = listfile.collect {|f| f.rcs_pathname}
+	  return if rcs_pathnames.empty?
+	  with_work {|t|
+	    r, w = IO.pipe
+	    pid = fork {
+	      STDOUT.reopen(w)
+	      open('/dev/null', 'w') {|f| STDERR.reopen(f)}
+	      r.close
+	      w.close
+	      Dir.chdir(t.path)
+	      command = ['rlog']
+	      command += opts
+	      command += rcs_pathnames
+	      exec *command
+	    }
 	    w.close
-	    Dir.chdir(t.path)
-	    command = ['rlog']
-	    command += opts
-	    command += rcs_pathnames
-	    exec *command
+	    parser = Parser::Log.new(r)
+	    until parser.eof?
+	      parser.parse(visitor)
+	    end
+	    r.close
+	    Process.waitpid(pid, 0)
 	  }
-	  w.close
-	  parser = Parser::Log.new(r)
-	  until parser.eof?
-	    parser.parse(visitor)
-	  end
-	  r.close
-	  Process.waitpid(pid, 0)
 	}
       end
 
@@ -104,17 +110,19 @@ class CVS
       end
 
 =begin
---- mkfile(name, contents, log[, description[, branch_tag[, author[, date[, state]]]]])
+--- mkfile(name, contents, log[, description[, branch_tag[, author[, date[, state[, rev]]]]]])
 =end
-      def mkfile(name, contents, log, description='', branch_tag=nil, author=nil, date=nil, state=nil)
+      def mkfile(name, contents, log, description='', branch_tag=nil, author=nil, date=nil, state=nil, rev=nil)
 	write_lock {
 	  if branch_tag
-	    h = mkfile(name, '', description, "file #{name} was initially added on branch #{branch_tag}.\n", nil, author, date, 'dead')
+	    h = mkfile(name, '', description,
+	      "file #{name} was initially added on branch #{branch_tag}.\n", nil, author, date, 'dead')
 	    h = h.file.mkbranch(h.head_rev, branch_tag)
 	    h.add(contents, log, author, date)
 	    return h
 	  else
 	    state = 'Exp' if state == nil
+	    rev = Revision.create("1.1") if rev == nil
 	    work = TempDir.create
 	    work.open(name, 'w') {|f| f.print contents}
 	    f = simple_file(name, state == 'dead')
@@ -124,11 +132,12 @@ class CVS
 	    command << "-m#{log}"
 	    command << "-w#{author}" if author
 	    command << "-d#{date}" if date
+	    command << "-r#{rev}" if rev
 	    command << "-s#{state}"
 	    command << f.rcs_pathname
 	    command << work.path(name)
 	    system *command
-	    return f.newhead(nil, nil, Revision.create("1.1"), state)
+	    return f.newhead(nil, nil, rev, state)
 	  end
 	}
       end

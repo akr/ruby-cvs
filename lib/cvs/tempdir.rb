@@ -114,6 +114,8 @@ class CVS
 =begin
 --- newdir([name])
 --- newdir([name]) {|oldname| ...}
+--- create([name])
+--- create([name]) {|oldname| ...}
     creates a temporary directory under the temporary directory and
     returns associated temporary directory object.
 
@@ -127,6 +129,7 @@ class CVS
     def newdir(name=newname, &genname)
       return Sub.new(self, path(name), &(genname || @genname))
     end
+    alias create newdir
 
     class Sub < TempDir
       def initialize(parent, dir, &genname)
