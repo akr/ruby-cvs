@@ -6,7 +6,7 @@ require 'reviz-conf.rb'
 
 require 'cvs'
 require 'cgi'
-require 'html/template'
+require 'rsp'
 
 class SBuf
   def initialize
@@ -191,46 +191,33 @@ class ReViz
   end
 
   def list_repository
-    tmpl = HTML::Template.new("#{HTML_TEMPLATE_DIR}/list_repositories.html")
-    n = tmpl.node('repository_list')
-    CVSROOT_LIST.each {|name, *rest|
-      n.param({'url'=>url('', {'cvsroot'=>name}),
-               'repository_name'=>name})
-    }
-    @cgibuffer.print tmpl.output
+    @cgibuffer.print RSP.load("#{RSP_DIR}/list_repositories.html").new(
+      CVSROOT_LIST.collect {|name, *rest|
+        [name, url('', {'cvsroot'=>name})]
+      }).gen
   end
 
   def view_directory
-    tmpl = HTML::Template.new("#{HTML_TEMPLATE_DIR}/view_directory.html")
-    unless (listdir = @cvsdir.listdir).empty?
-      n0 = tmpl.cond('directory')
-      n = n0.node('directory_list')
-      listdir.sort! {|a,b| a.path <=> b.path}
-      listdir.each {|subdir|
-        n.param({'url'=>url(subdir.path + '/'),
-	         'name'=>subdir.path})
-      }
-      n0.expand
-    end
-    unless (listfile = @cvsdir.listfile).empty?
-      n0 = tmpl.node('file')
-      n = n0.node('file_list')
-      listfile.sort! {|a,b| a.path <=> b.path}
-      listfile.each {|file|
-        n.param({'url'=>url(file.path),
-	         'name'=>file.path})
-      }
-      n0.expand
-    end
-    @cgibuffer.print tmpl.output
+    @cgibuffer.print RSP.load("#{RSP_DIR}/view_directory.html").new(
+      RSP::Data.new(
+        :directory =>
+	  @cvsdir.listdir.sort {|a,b| a.path <=> b.path}.collect {|subdir|
+	    RSP::Data.new(
+	      :name => subdir.path,
+	      :url => url(subdir.path + '/'))},
+        :file =>
+	  @cvsdir.listfile.sort {|a,b| a.path <=> b.path}.collect {|file|
+	    RSP::Data.new(
+	      :name => file.path,
+	      :url => url(file.path))})).gen
   end
 
   def view_log
-    tmpl = HTML::Template.new("#{HTML_TEMPLATE_DIR}/view_log.html")
-    @cvsfile.parse_log(ViewLogVisitor.new {|args|
-      expand_log(tmpl.node('log'), *args)
-    })
-    @cgibuffer.print tmpl.output
+    logs = []
+    @cvsfile.parse_log(ViewLogVisitor.new {|args| logs << rsp_log(*args)})
+    @cgibuffer.print RSP.load("#{RSP_DIR}/view_log.html").new(
+      RSP::Data.new(
+        :logs => logs)).gen
   end
   class ViewLogVisitor < CVS::Visitor
     def initialize(&block)
@@ -252,52 +239,65 @@ class ReViz
     end
   end
 
-  def expand_log(node, rev, locked_by, date, author, state,
-                add, del, branches, message, tags)
-    n = node.node('tag_list')
-    tags.each {|tag| n.param({'tag'=>tag})}
-
-    node.param({
-      'rev' => rev.to_s,
-      'checkout_url' => url(@cvsfile.path, {'rev'=>rev.to_s}),
-      'annotate_url' => url(@cvsfile.path, {'annotate'=>rev.to_s}),
-      'date' => CGI::escapeHTML(date.to_s),
-      'author' => CGI::escapeHTML(author),
-      'message' => CGI::escapeHTML(message)
-    })
+  def rsp_log(rev, locked_by, date, author, state,
+	  add, del, branches, message, tags)
+    RSP::Data.new(
+      :rev => rev.to_s,
+      :tags => tags,
+      :checkout_url => url(@cvsfile.path, {'rev'=>rev.to_s}),
+      :annotate_url => url(@cvsfile.path, {'annotate'=>rev.to_s}),
+      :date => date,
+      :author => author,
+      :message => CGI::escapeHTML(message)
+    )
   end
 
   def view_checkout(rev)
-    tmpl = HTML::Template.new("#{HTML_TEMPLATE_DIR}/view_checkout.html")
-    @cvsfile.parse_log(ViewLogVisitor.new {|args|
-      expand_log(tmpl.node('log'), *args)
-    }, ["-r#{rev.to_s}"])
-
+    log = nil
+    @cvsfile.parse_log(ViewLogVisitor.new {|args| log = rsp_log(*args)},
+                       ["-r#{rev.to_s}"])
     @cvsfile.checkout(rev) {|contents, a|
-      tmpl.param({'contents' => CGI::escapeHTML(contents),
-                  'attributes' => CGI::escapeHTML(a.inspect)})
+      @cgibuffer.print RSP.load("#{RSP_DIR}/view_checkout.html").new(
+	RSP::Data.new(
+	  :log => log,
+	  :contents => contents,
+	  :attributes => a.inspect
+	)).gen
     }
-
-    @cgibuffer.print tmpl.output
   end
 
   def view_annotate(rev)
-    tmpl = HTML::Template.new("#{HTML_TEMPLATE_DIR}/view_annotate.html")
-    n = tmpl.node('line')
-    revlen = rev.to_s.length + 1
-    @cvsfile.fullannotate(rev) {|line, date1, rev1, author, rev2, date2|
-      h = {'contents' => CGI::escapeHTML(line),
-	   'date1' => date1.strftime('%Y/%m/%d'),
-	   'rev1' => rev1.to_s.ljust(revlen),
-	   'author' => CGI::escapeHTML(author).center(8),
-	   'rev2' => rev2.to_s.ljust(revlen)
+    lines = []
+    rev1len = 0
+    rev2len = 0
+    authorlen = 0
+    @cvsfile.fullannotate(rev) {|contents, date1, rev1, author, rev2, date2|
+      h = {:contents => contents,
+	   :date1 => date1,
+	   :rev1 => rev1,
+	   :author => author,
+	   :rev2 => rev2
       }
-      h['date2'] = date2 ? date2.strftime('%Y/%m/%d') : ' ' * 10
-      h['nonewline'] = "\nno newline at last\n" unless /\n\z/ =~ line
-      n.param(h)
+      h[:date2] = date2 ? date2 : nil
+      h[:nonewline] = /\n\z/ !~ contents
+      lines << RSP::Data.new(h)
+      if rev1len < (l = rev1.to_s.length)
+	rev1len = l
+      end
+      if rev2len < (l = rev2.to_s.length)
+	rev2len = l
+      end
+      if authorlen < (l = author.length)
+	authorlen = l
+      end
     }
-
-    @cgibuffer.print tmpl.output
+    @cgibuffer.print RSP.load("#{RSP_DIR}/view_annotate.html").new(
+      RSP::Data.new(
+        :rev1len => rev1len,
+        :rev2len => rev2len,
+        :authorlen => authorlen,
+	:lines => lines
+      )).gen
   end
 end
 

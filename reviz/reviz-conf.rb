@@ -4,5 +4,5 @@ class ReViz
     ['cvsroot2', '/home/akr/.cvsroot2'],
   ]
 
-  HTML_TEMPLATE_DIR = '/home/akr/src/ruby/cvs/ruby-cvs/reviz-lib'
+  RSP_DIR = '/home/akr/src/ruby/cvs/ruby-cvs/reviz'
 end

@@ -4,23 +4,23 @@
 </head>
 <body>
 
-<!begin:directory>
+<%unless directory.empty?%>
 <h2>directory</h2>
 <ul>
-<!begin:directory_list>
-<li><a href="<!var:url>"><!var:name></a></li>
-<!end:directory_list>
-</ul>
-<!end:directory>
+<%directory.each {|d| with(d) {
+%><li><a href="<%=url%>"><%=name%></a></li>
+<%}}
+%></ul>
+<%end%>
 
-<!begin:file>
+<%unless file.empty?%>
 <h2>file</h2>
 <ul>
-<!begin:file_list>
-<li><a href="<!var:url>"><!var:name></a></li>
-<!end:file_list>
-</ul>
-<!end:file>
+<%file.each {|f| with(f) {
+%><li><a href="<%=url%>"><%=name%></a></li>
+<%}}
+%></ul>
+<%end%>
 
 </body>
 </html>

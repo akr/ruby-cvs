@@ -4,7 +4,9 @@
 </head>
 <body>
 <ul>
-<!begin:repository_list><li><a href="<!var:url>"><!var:repository_name></a></li>
-<!end:repository_list></ul>
+<%each {|name, url|
+%><li><a href="<%=url%>"><%name%></a></li>
+<%}
+%></ul>
 </body>
 </html>

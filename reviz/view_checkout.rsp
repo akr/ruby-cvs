@@ -4,17 +4,20 @@
 </head>
 <body>
 
-<!begin:log><p>
-<a name="#rev<!var:rev>"></a>
-<!begin:tag_list><a name="#<!var:tag>"></a>
-<!end:tag_list>Revision <b><a href="<!var:checkout_url>"><!var:rev></a></b> /
-<a href="<!var:annotate_url>">annotate</a>,
-<i><!var:date></i> by <i><!var:author></i>
+<%with(log) {
+%><p>
+<a name="#rev<%=rev%>"></a>
+<%tags.each {|tag|
+%><a name="#<%=tag%>"></a>
+<%}
+%>Revision <b><a href="<%=checkout_url%>"><%=rev%></a></b> /
+<a href="<%=annotate_url%>">annotate</a>,
+<i><%=CGI::escapeHTML date.to_s%></i> by <i><%=CGI::escapeHTML author%></i>
 </p>
-<pre><!var:message></pre>
-<hr><!end:log>
-<p><!var:attributes></p>
+<pre><%=CGI::escapeHTML message%></pre>
+<%}%>
+<p><%=CGI::escapeHTML attributes%></p>
 <hr>
-<pre><!var:contents></pre>
+<pre><%=CGI::escapeHTML contents%></pre>
 </body>
 </html>

@@ -3,6 +3,23 @@
 <title>annotate</title>
 </head>
 <body>
-<pre><!begin:line><!var:date1> <!var:rev1> <!var:author> <!var:rev2> <!var:date2> : <!var:contents><!var:nonewline><!end:line></pre>
+
+<pre>
+<%
+r1l = rev1len
+r2l = rev2len
+al = authorlen
+lines.each {|line| with(line) {
+%><%=date1.strftime('%Y/%m/%d')
+%> <%=rev1.to_s.ljust(r1l)
+%> <%=CGI::escapeHTML author.center(al)
+%> <%=rev2.to_s.ljust(r2l)
+%> <%=date2 ? date2.strftime('%Y/%m/%d') : ' ' * 10
+%> : <%=CGI::escapeHTML contents
+%><%if nonewline%>
+no newline at last
+<%end
+%><%}}%>
+</pre>
 </body>
 </html>
