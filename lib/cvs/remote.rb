@@ -130,7 +130,6 @@ class CVS
 	  wd.run_cvs(['update', '-r00', '-d', '-p', wdname], nil, err) {|status|
 	    File.open(err) {|f|
 	      f.each_line {|line|
-		p line
 		if / server: New directory `#{wdname}\/(.*)' -- ignored\n\z/ =~ line
 		  res << simple_dir($1)
 		end
