@@ -191,14 +191,14 @@ class ReViz
   end
 
   def list_repository
-    @cgibuffer.print RSP.load("#{RSP_DIR}/list_repositories.html").new(
+    @cgibuffer.print RSP.load("#{RSP_DIR}/list_repositories.rsp").new(
       CVSROOT_LIST.collect {|name, *rest|
         [name, url('', {'cvsroot'=>name})]
       }).gen
   end
 
   def view_directory
-    @cgibuffer.print RSP.load("#{RSP_DIR}/view_directory.html").new(
+    @cgibuffer.print RSP.load("#{RSP_DIR}/view_directory.rsp").new(
       RSP::Data.new(
         :directory =>
 	  @cvsdir.listdir.sort {|a,b| a.path <=> b.path}.collect {|subdir|
@@ -215,7 +215,7 @@ class ReViz
   def view_log
     logs = []
     @cvsfile.parse_log(ViewLogVisitor.new {|args| logs << rsp_log(*args)})
-    @cgibuffer.print RSP.load("#{RSP_DIR}/view_log.html").new(
+    @cgibuffer.print RSP.load("#{RSP_DIR}/view_log.rsp").new(
       RSP::Data.new(
         :logs => logs)).gen
   end
@@ -257,7 +257,7 @@ class ReViz
     @cvsfile.parse_log(ViewLogVisitor.new {|args| log = rsp_log(*args)},
                        ["-r#{rev.to_s}"])
     @cvsfile.checkout(rev) {|contents, a|
-      @cgibuffer.print RSP.load("#{RSP_DIR}/view_checkout.html").new(
+      @cgibuffer.print RSP.load("#{RSP_DIR}/view_checkout.rsp").new(
 	RSP::Data.new(
 	  :log => log,
 	  :contents => contents,
@@ -291,7 +291,7 @@ class ReViz
 	authorlen = l
       end
     }
-    @cgibuffer.print RSP.load("#{RSP_DIR}/view_annotate.html").new(
+    @cgibuffer.print RSP.load("#{RSP_DIR}/view_annotate.rsp").new(
       RSP::Data.new(
         :rev1len => rev1len,
         :rev2len => rev2len,
