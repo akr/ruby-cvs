@@ -1,8 +1,8 @@
 #!/usr/local/bin/ruby
 
-## VizTree visualize branch relations in a module.
+## BranchViz visualize branch relations in a module.
 
-# VizTree generates a graph of branches in the format handled by `dot'
+# BranchViz generates a graph of branches in the format handled by `dot'
 # utility in GraphViz <URL:http://www.research.att.com/sw/tools/graphviz/>.
 # Since ImageMagick <URL:http://www.imagemagick.org/> recognizes the format,
 # `display' utility can handle it if `dot' and `gs' is available. 
@@ -10,15 +10,15 @@
 # ImageMagick 5.1.1.)
 
 ## Usage:
-# viztree [options] file,v|directory ...
+# branchviz [options] file,v|directory ...
 # option: -h : print this help message.
 #         -a : show all relations.
 
 ## Example:
-# viztree -a ~/.cvsroot/tmp/apel|display
-# viztree ~/.cvsroot/tmp/flim|dot -Tpng
-# viztree ~/.cvsroot/tmp/gnus|dot -Tsvg
-# viztree :fork:$HOME/.cvsroot//ccvs//ChangeLog|display
+# branchviz -a ~/.cvsroot/tmp/apel|display
+# branchviz ~/.cvsroot/tmp/flim|dot -Tpng
+# branchviz ~/.cvsroot/tmp/gnus|dot -Tsvg
+# branchviz :fork:$HOME/.cvsroot//ccvs//ChangeLog|display
 
 ## ToDo:
 # visualize trees other than branch tree: directory tree and revision tree.
@@ -108,7 +108,6 @@ class Node
   end
 
   def self.tsort
-    len = TagMap.size
     order_cell = [0]
     order_hash = {}
     node_stack = []
@@ -214,7 +213,7 @@ end
 
 def usage
   STDERR.print <<"End"
-usage: viztree [options] file,v|directory|cvsroot//module ...
+usage: branchviz [options] file,v|directory|cvsroot//module ...
 option: -h : print this help message.
         -a : show all relations.
 End
