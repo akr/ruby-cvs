@@ -22,7 +22,7 @@
   * think better name.
 
 * application
-  * ViewCVS (or cvsweb) like cgi script - ReViz - work in progress.
+  * ViewCVS (or cvsweb) like cgi script - ReViz - work in progress. (needs better name.)
   * repository downloader - reimplement CVSsuck.
   * various tree visualizer - VizTree (formaly CVStree)
   * local modification uploader.
