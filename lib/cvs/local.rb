@@ -74,6 +74,12 @@ class CVS
 	return res
       end
 
+      def parse_log(visitor, opts=[])
+        listfile.each {|f|
+	  f.parse_log(visitor, opts)
+	}
+      end
+
       def parse_raw_log(visitor, opts=[])
 	read_lock {
 	  rcs_pathnames = listfile.collect {|f| f.rcs_pathname}
