@@ -2,8 +2,11 @@
 
 # reviz is a CGI program which browse CVS repository like ViewCVS or cvsweb.
 
+require 'reviz-conf.rb'
+
 require 'cvs'
 require 'cgi'
+require 'html/template'
 
 class SBuf
   def initialize
@@ -73,46 +76,9 @@ class CGIBuffer
     @cgi.print @cgi.header(@options)
     @buf.each {|s| @cgi.print s}
   end
-
-  def xhtml
-    print <<'End'
-<?xml version="1.0" encoding="ISO-8859-1"?>
-<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" >
-End
-    yield
-    print <<'End'
-</html>
-End
-  end
-
-  def elt(tag, attr={})
-    print "<#{tag}"
-    attr.each {|k, v|
-      print " #{k}=\"#{CGI::escapeHTML(v)}\""
-    }
-    if block_given?
-      print ">"
-      yield
-      print "</#{tag}>"
-    else
-      print " />"
-    end
-  end
-
-  def element(tag, attr={}, &block)
-    elt(tag, attr, &block)
-    print "\n"
-  end
-
 end
 
 class ReViz
-  CVSROOT_LIST = [
-    ['main', '/home/akr/.cvsroot'],
-    ['cvsroot2', '/home/akr/.cvsroot2'],
-  ]
-
   StickyParameter = {
     'cvsroot' => CVSROOT_LIST[0][0],
     'hideattic' => nil,
@@ -162,7 +128,7 @@ class ReViz
   end
 
   def init_url
-    @url_base = @cgi.script_name
+    @url_base = @cgi.script_name || 'reviz.cgi'
     @url_params = {}
     StickyParameter.each {|k,v|
       if @cgi.has_key? k
@@ -208,7 +174,9 @@ class ReViz
       init_cvsroot
       init_url
 
-      if @cvsfile
+      if !@cgi.path_info
+        list_repository
+      elsif @cvsfile
 	if @cgi.has_key? 'rev'
 	  view_checkout(CVS::Revision.create(@cgi['rev'][0]))
 	elsif @cgi.has_key? 'annotate'
@@ -223,80 +191,46 @@ class ReViz
   end
 
   def list_repository
-    @cgibuffer.xhtml {
-      @cgibuffer.element('head') {
-	@cgibuffer.element('title') {
-	  @cgibuffer.print 'repository list'
-	}
-      }
-      @cgibuffer.element('body') {
-	@cgibuffer.element('ul') {
-	  CVSROOT_LIST.each {|name, *rest|
-	    @cgibuffer.element('li') {
-	      @cgibuffer.element('a', {'href'=>url(nil, {'cvsroot'=>name})}) {
-		@cgibuffer.print name
-	      }
-	    }
-	  }
-	}
-      }
+    tmpl = HTML::Template.new("#{HTML_TEMPLATE_DIR}/list_repositories.html")
+    n = tmpl.node('repository_list')
+    CVSROOT_LIST.each {|name, *rest|
+      n.param({'url'=>url('', {'cvsroot'=>name}),
+               'repository_name'=>name})
     }
+    @cgibuffer.print tmpl.output
   end
 
   def view_directory
-    @cgibuffer.xhtml {
-      @cgibuffer.element('head') {
-	@cgibuffer.element('title') {
-	  @cgibuffer.print 'directory'
-	}
+    tmpl = HTML::Template.new("#{HTML_TEMPLATE_DIR}/view_directory.html")
+    unless (listdir = @cvsdir.listdir).empty?
+      n0 = tmpl.cond('directory')
+      n = n0.node('directory_list')
+      listdir.sort! {|a,b| a.path <=> b.path}
+      listdir.each {|subdir|
+        n.param({'url'=>url(subdir.path + '/'),
+	         'name'=>subdir.path})
       }
-      @cgibuffer.element('body') {
-	unless (listdir = @cvsdir.listdir).empty?
-	  listdir.sort! {|a,b| a.path <=> b.path}
-	  @cgibuffer.element('h2') { @cgibuffer.print "directory" }
-	  @cgibuffer.element('ul') {
-	    listdir.each {|subdir|
-	      @cgibuffer.element('li') {
-		@cgibuffer.element('a',
-		  {'href'=>url(subdir.path + '/')}) {
-		  @cgibuffer.print subdir.path
-		}
-	      }
-	    }
-	  }
-	end
-	unless (listfile = @cvsdir.listfile).empty?
-	  listfile.sort! {|a,b| a.name <=> b.name}
-	  @cgibuffer.element('h2') { @cgibuffer.print "file" }
-	  @cgibuffer.element('ul') {
-	    listfile.each {|file|
-	      @cgibuffer.element('li') {
-		@cgibuffer.element('a',
-		  {'href'=>url(file.path)}) {
-		  @cgibuffer.print file.path
-		}
-	      }
-	    }
-	  }
-	end
+      n0.expand
+    end
+    unless (listfile = @cvsdir.listfile).empty?
+      n0 = tmpl.node('file')
+      n = n0.node('file_list')
+      listfile.sort! {|a,b| a.path <=> b.path}
+      listfile.each {|file|
+        n.param({'url'=>url(file.path),
+	         'name'=>file.path})
       }
-    }
+      n0.expand
+    end
+    @cgibuffer.print tmpl.output
   end
 
   def view_log
-    @cgibuffer.xhtml {
-      @cgibuffer.element('head') {
-	@cgibuffer.element('title') {
-	  @cgibuffer.print 'file'
-	}
-      }
-      @cgibuffer.element('body') {
-	@cvsfile.parse_log(ViewLogVisitor.new {|args|
-	  print_log(*args)
-	  @cgibuffer.element('hr')
-	})
-      }
-    }
+    tmpl = HTML::Template.new("#{HTML_TEMPLATE_DIR}/view_log.html")
+    @cvsfile.parse_log(ViewLogVisitor.new {|args|
+      expand_log(tmpl.node('log'), *args)
+    })
+    @cgibuffer.print tmpl.output
   end
   class ViewLogVisitor < CVS::Visitor
     def initialize(&block)
@@ -318,77 +252,53 @@ class ReViz
     end
   end
 
-  def print_log(rev, locked_by, date, author, state,
+  def expand_log(node, rev, locked_by, date, author, state,
                 add, del, branches, message, tags)
+    n = node.node('tag_list')
+    tags.each {|tag| n.param({'tag'=>tag})}
 
-    @cgibuffer.element('p') {
-      @cgibuffer.element('a', {'name'=>"rev#{rev.to_s}"}) {}
-      tags.each {|tag| @cgibuffer.element('a', {'name'=>tag}) {}}
-      @cgibuffer.print 'Revision '
-      @cgibuffer.elt('b') {
-	@cgibuffer.elt('a',
-	  {'href'=>url(@cvsfile.path, {'rev'=>rev.to_s})}) {
-	  @cgibuffer.print rev.to_s
-	}
-      }
-      @cgibuffer.print ' / '
-      @cgibuffer.elt('a',
-	{'href'=>url(@cvsfile.path, {'annotate'=>rev.to_s})}) {
-	@cgibuffer.print 'annotate'
-      }
-      @cgibuffer.print ', '
-      @cgibuffer.element('i') {@cgibuffer.print CGI::escapeHTML(date.to_s)}
-      @cgibuffer.print ' by '
-      @cgibuffer.element('i') {@cgibuffer.print CGI::escapeHTML(author)}
-    }
-    @cgibuffer.element('pre') {@cgibuffer.print CGI::escapeHTML(message)}
+    node.param({
+      'rev' => rev.to_s,
+      'checkout_url' => url(@cvsfile.path, {'rev'=>rev.to_s}),
+      'annotate_url' => url(@cvsfile.path, {'annotate'=>rev.to_s}),
+      'date' => CGI::escapeHTML(date.to_s),
+      'author' => CGI::escapeHTML(author),
+      'message' => CGI::escapeHTML(message)
+    })
   end
 
   def view_checkout(rev)
-    @cgibuffer.xhtml {
-      @cgibuffer.element('head') {
-	@cgibuffer.element('title') {
-	  @cgibuffer.print 'checkout'
-	}
-      }
-      @cgibuffer.element('body') {
-	@cvsfile.parse_log(ViewLogVisitor.new {|args|
-	  print_log(*args)
-	}, ["-r#{rev.to_s}"])
-	@cvsfile.checkout(rev) {|contents, a|
-	  @cgibuffer.element('p') {@cgibuffer.print CGI::escapeHTML(a.inspect)}
-	  @cgibuffer.element('hr')
-	  @cgibuffer.element('pre') {
-	    @cgibuffer.print CGI::escapeHTML(contents)
-	  }
-	}
-      }
+    tmpl = HTML::Template.new("#{HTML_TEMPLATE_DIR}/view_checkout.html")
+    @cvsfile.parse_log(ViewLogVisitor.new {|args|
+      expand_log(tmpl.node('log'), *args)
+    }, ["-r#{rev.to_s}"])
+
+    @cvsfile.checkout(rev) {|contents, a|
+      tmpl.param({'contents' => CGI::escapeHTML(contents),
+                  'attributes' => CGI::escapeHTML(a.inspect)})
     }
+
+    @cgibuffer.print tmpl.output
   end
 
   def view_annotate(rev)
-    @cgibuffer.xhtml {
-      @cgibuffer.element('head') {
-	@cgibuffer.element('title') {
-	  @cgibuffer.print 'annotate'
-	}
+    tmpl = HTML::Template.new("#{HTML_TEMPLATE_DIR}/view_annotate.html")
+    n = tmpl.node('line')
+    revlen = rev.to_s.length + 1
+    @cvsfile.fullannotate(rev) {|line, date1, rev1, author, rev2, date2|
+      h = {'contents' => CGI::escapeHTML(line),
+	   'date1' => date1.strftime('%Y/%m/%d'),
+	   'rev1' => rev1.to_s.ljust(revlen),
+	   'author' => CGI::escapeHTML(author).center(8),
+	   'rev2' => rev1.to_s.ljust(revlen)
       }
-      @cgibuffer.element('body') {
-	@cgibuffer.element('pre') {
-	  @cvsfile.fullannotate(rev) {|line, date1, rev1, author, rev2, date2|
-	    #@cgibuffer.printf "%-12s (%-8.8s %s): ", rev1.to_s, author, date1.strftime('%d-%b-%y')
-	    @cgibuffer.printf "%s %-8s %-8.8s %-8s %s): ",
-	      date1.strftime('%Y/%m/%d'), rev1.to_s, author, rev2.to_s, (date2 ? date2.strftime('%Y/%m/%d') : "          ")
-	    @cgibuffer.print CGI::escapeHTML(line)
-	    unless /\n\z/ =~ line
-	      @cgibuffer.print "\nno newline\n"
-	    end
-	  }
-	}
-      }
+      h['date2'] = date2 ? date2.strftime('%Y/%m/%d') : ' ' * 10
+      h['nonewline'] = "\nno newline at last\n" unless /\n\z/ =~ line
+      n.param(h)
     }
-  end
 
+    @cgibuffer.print tmpl.output
+  end
 end
 
 ReViz.new.main
