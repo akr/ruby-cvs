@@ -8,7 +8,7 @@ http://cvs.m17n.org/~akr/ruby-cvs/
 
 * Requirements
 
-  ruby-1.6.4	(older version may work.)
+  ruby-1.7.1	(older version may work.)
   http://www.ruby-lang.org/ 
 
   cvs-1.11.1p1	(older version may work.)
@@ -17,15 +17,13 @@ http://cvs.m17n.org/~akr/ruby-cvs/
   rcs-5.7	(older version may work.)
   ftp://ftp.cs.purdue.edu/pub/RCS/
 
-  optional:
-
-  flex.rb-0.10		(older version doesn't work.)
+  flex.rb-0.10	(optional.  older version doesn't work.)
   http://www.inf.bme.hu/~pts/flex_rb-latest.tar.gz
   (it makes parsing rcs file faster.)
 
 * Samples
 
-  ReViz: ViewCVS like CGI script.  See reviz/*
+  ReViz: ViewCVS like CGI script.  See reviz/*.
   VizTree: Branch Tree Visualizer.  See viztree.
 
 * Author
