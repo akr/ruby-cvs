@@ -55,60 +55,87 @@ class Diff
     @original_a = a
     @original_b = b
 
-    a = a.dup
-    b = b.dup
+    count_a = {}
+    count_a.default = 0
+    a.each {|e| count_a[e] += 1}
 
-    @suffix = []
-    while !a.empty? && !b.empty?
-      if a.last.hash == b.last.hash && a.last.eql?(b.last)
-	@suffix << [a.last, b.last]
-	a.pop
-	b.pop
-      else
-	break
+    count_b = {}
+    count_b.default = 0
+    b.each {|e| count_b[e] += 1}
+
+    beg_a = 0
+    end_a = a.length
+
+    beg_b = 0
+    end_b = b.length
+
+    @prefix_lcs = []
+    @suffix_lcs = []
+
+    flag = true
+    while flag
+      flag = false
+
+      while beg_a < end_a && beg_b < end_b && a[beg_a].eql?(b[beg_b])
+	@prefix_lcs << [beg_a, beg_b]
+	count_a[a[beg_a]] -= 1
+	count_b[b[beg_b]] -= 1
+	beg_a += 1
+	beg_b += 1
+	flag = true
+      end
+
+      while beg_a < end_a && beg_b < end_b && a[end_a - 1].eql?(b[end_b - 1])
+        @suffix_lcs << [end_a - 1, end_b - 1]
+	count_a[a[end_a - 1]] -= 1
+	count_b[b[end_b - 1]] -= 1
+	end_a -= 1
+	end_b -= 1
+	flag = true
+      end
+
+      while beg_a < end_a && count_b[a[beg_a]] == 0
+	count_a[a[beg_a]] -= 1
+        beg_a += 1
+	flag = true
+      end
+
+      while beg_b < end_b && count_a[b[beg_b]] == 0
+	count_b[b[beg_b]] -= 1
+        beg_b += 1
+	flag = true
+      end
+
+      while beg_a < end_a && count_b[a[end_a - 1]] == 0
+	count_a[a[end_a - 1]] -= 1
+        end_a -= 1
+	flag = true
+      end
+
+      while beg_b < end_b && count_a[b[end_b - 1]] == 0
+	count_b[b[end_b - 1]] -= 1
+        end_b -= 1
+	flag = true
       end
     end
-    @suffix.reverse!
-
-    @prefix = []
-    i = 0
-    while i < a.length && i < b.length
-      if a[i].hash == b[i].hash && a[i].eql?(b[i])
-	@prefix << [a[i], b[i]]
-	i += 1
-      else
-	break
-      end
-    end
-    a[0, i] = []
-    b[0, i] = []
-
-    @middle_a = a
-    @middle_b = b
-
-    hash_a = {}
-    hash_b = {}
-    a.each {|v| hash_a[v] = true}
-    b.each {|v| hash_b[v] = true}
 
     reduced_a = []
-    reduced_b = []
     @revert_index_a = []
-    @revert_index_b = []
 
-    a.each_index {|i|
-      v = a[i]
-      if hash_b.include? v
-	reduced_a << v
-	@revert_index_a << @prefix.length + i
+    (beg_a...end_a).each {|i|
+      if count_b[a[i]] != 0
+	reduced_a << a[i]
+	@revert_index_a << i
       end
     }
 
-    b.each_index {|i|
-      v = b[i]
-      if hash_a.include? v
-	reduced_b << v
-	@revert_index_b << @prefix.length + i
+    reduced_b = []
+    @revert_index_b = []
+
+    (beg_b...end_b).each {|i|
+      if count_a[b[i]] != 0
+	reduced_b << b[i]
+	@revert_index_b << i
       end
     }
 
@@ -135,13 +162,13 @@ class Diff
     reduced_lcs = klass.new(@a, @b).lcs
 
     lcs = Subsequence.new
-    lcs.add 0, 0, @prefix.length if 0 < @prefix.length
+    @prefix_lcs.each {|i, j| lcs.add i, j}
     reduced_lcs.each {|i, j, l|
       l.times {|k|
         lcs.add @revert_index_a[i+k], @revert_index_b[j+k]
       }
     }
-    lcs.add @prefix.length + @middle_a.length, @prefix.length + @middle_b.length, @suffix.length if 0 < @suffix.length
+    @suffix_lcs.reverse_each {|i, j| lcs.add i, j}
 
     return lcs
   end
