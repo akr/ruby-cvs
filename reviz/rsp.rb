@@ -139,7 +139,18 @@ End
   class RSPError < StandardError
   end
 
-  def RSP.compile_template(class_code, gen_body, filename, depend=[])
+  def RSP.register_string(class_code, strhash, data)
+    if strhash.include?(data)
+      name = strhash[data]
+    else
+      name = "STR#{strhash.size}"
+      strhash[data] = name
+      class_code << name << ' = ' << data.dump << "\n"
+    end
+    return name
+  end
+
+  def RSP.compile_template(class_code, gen_body, filename, depend=[], strhash={})
     depend << filename
     template = open(filename) {|f| f.read}
 
@@ -151,18 +162,19 @@ End
       when :contents
 	case data
         when '<%%'
-	  gen_body << 'buf << ' << " '<%'\n"
+	  gen_body << 'buf << ' << register_string(class_code, strhash, '<%') << "\n"
         when '%%>'
-	  gen_body << 'buf << ' << " '%>'\n"
+	  gen_body << 'buf << ' << register_string(class_code, strhash, '%>') << "\n"
         when '<%'
 	  state = :code
 	  line_open = linenumber
         when '%>'
 	  raise RSPError.new("#{filename}:#{linenumber}: unmatched '%>'")
+	when ''
+	  # ignore empty string.
 	else
-	  gen_body << 'buf << ' << data.dump << "\n"
-	  data.tr!("^\n", '')
-	  linenumber += data.length
+	  gen_body << 'buf << ' << register_string(class_code, strhash, data) << "\n"
+	  linenumber += data.tr("^\n", '').length
 	end
       when :code
 	case data
@@ -184,7 +196,7 @@ End
 	    case data
 	    when /include\s+file="(.*)"\s*\z/
 	      RSP.compile_template(class_code, gen_body,
-		File.dirname(filename) + '/' + $1, depend)
+		File.dirname(filename) + '/' + $1, depend, strhash)
 	    else
 	      raise RSPError.new("#{filename}:#{linenumber}: unknown directive: #{data}")
 	    end
