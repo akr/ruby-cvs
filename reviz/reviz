@@ -85,7 +85,14 @@ class ReViz
 
     result = @url_base.dup
     if path_info
-      result << '/' << path_info
+      case path_info
+      when CVS::D
+        result << '/' << path_info.path << '/'
+      when CVS::F
+        result << '/' << path_info.path
+      else
+	result << '/' << path_info
+      end
     end
     unless params.empty?
       result << '?' << params.keys.sort.collect {|k|
@@ -350,7 +357,7 @@ class ReViz
     special_tags = []
     dirtags.each {|tag, types|
       types.compact!
-      url = url(@cvsdir.path + '/', {'only_with_tag'=>tag})
+      url = url(@cvsdir, {'only_with_tag'=>tag})
       if types.length == 1
         case types[0]
 	when :vendor
@@ -368,8 +375,8 @@ class ReViz
     branch_tags.sort! {|(a,), (b,)| b <=> a}
     nonbranch_tags.sort! {|(a,), (b,)| b <=> a}
     special_tags.sort! {|(a,), (b,)| b <=> a}
-    special_tags << ['HEAD', url(@cvsdir.path + '/', {'only_with_tag'=>'HEAD'})]
-    special_tags << ['MAIN', url(@cvsdir.path + '/', {'only_with_tag'=>'MAIN'})]
+    special_tags << ['HEAD', url(@cvsdir, {'only_with_tag'=>'HEAD'})]
+    special_tags << ['MAIN', url(@cvsdir, {'only_with_tag'=>'MAIN'})]
     return RSP.load("#{RSP_DIR}/view_directory.rsp").new(
       RSP[
         :directory =>
@@ -377,7 +384,7 @@ class ReViz
 	    RSP[
 	      :name => File.basename(subdir.path),
 	      :path => subdir.path,
-	      :url => url(subdir.path + '/')]},
+	      :url => url(subdir)]},
         :file => files,
 	:vendor_tags => vendor_tags,
 	:branch_tags => branch_tags,
@@ -445,7 +452,7 @@ class ReViz
 	@files << RSP[
 	  :name => @cvsfile.name,
 	  :path => @cvsfile.path,
-	  :url => @reviz.url(@cvsfile.path),
+	  :url => @reviz.url(@cvsfile),
 	  :rev => @target,
 	  :date => @date,
 	  :author => @author,
@@ -491,9 +498,9 @@ class ReViz
     RSP[
       :rev => rev.to_s,
       :tags => tags,
-      :tagged_urls => Hash[*tags.collect {|tag| [tag, url(@cvsfile.path, {'only_with_tag'=>tag})]}.flatten],
-      :checkout_url => url(@cvsfile.path, {'rev'=>rev.to_s}),
-      :annotate_url => url(@cvsfile.path, {'annotate'=>rev.to_s}),
+      :tagged_urls => Hash[*tags.collect {|tag| [tag, url(@cvsfile, {'only_with_tag'=>tag})]}.flatten],
+      :checkout_url => url(@cvsfile, {'rev'=>rev.to_s}),
+      :annotate_url => url(@cvsfile, {'annotate'=>rev.to_s}),
       :date => date,
       :author => author,
       :message => message
