@@ -4,7 +4,7 @@ Contours is based on the algorithm which is presented by Claus Rick.
 
 I made two optimizations (for long LCS):
 
-* When midpoint of LCS is found, adjacent matches on same diagonal is checked.
+* When a midpoint of LCS is found, adjacent matches on same diagonal is checked.
   They are also part of LCS.  If LCS is long, they may exist and even long.
 
 * Search method for next contour uses divide and conquer.
