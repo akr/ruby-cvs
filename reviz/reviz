@@ -458,12 +458,12 @@ class ReViz
 	  :path => @cvsfile.path,
 	  :url => @reviz.url(@cvsfile),
 	  :rev => @target,
+	  :rev_url => @reviz.url(@cvsfile, {'rev' => @target.to_s}),
 	  :date => @date,
 	  :author => @author,
 	  :state => @state,
 	  :message => @message,
 	  :removed => @state == 'dead' || @filter.attic_sensitive? && @cvsfile.attic
-
 	]
       end
     end

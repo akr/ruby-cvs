@@ -46,7 +46,7 @@ end
 %> (removed)<%
   end
 %></td>
-  <td><%=rev%></td>
+  <td><a href="<%=CGI::escapeHTML rev_url%>"><%=rev%></a></td>
   <td><%=age(date)%></td>
   <td><%=CGI::escapeHTML author%></td>
   <td><%=CGI::escapeHTML message%></td>
