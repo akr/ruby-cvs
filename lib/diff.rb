@@ -119,29 +119,25 @@ class Diff
       end
     end
 
-    reduced_a = []
-    @revert_index_a = []
+    @alphabet = Alphabet.new
 
+    @a = []
+    @revert_index_a = []
     (beg_a...end_a).each {|i|
       if count_b[a[i]] != 0
-	reduced_a << a[i]
+	@a << @alphabet.add(a[i])
 	@revert_index_a << i
       end
     }
 
-    reduced_b = []
+    @b = []
     @revert_index_b = []
-
     (beg_b...end_b).each {|i|
       if count_a[b[i]] != 0
-	reduced_b << b[i]
+	@b << @alphabet.add(b[i])
 	@revert_index_b << i
       end
     }
-
-    @alphabet = Alphabet.new
-    @a = []; reduced_a.each {|v| @a << @alphabet.add(v)}
-    @b = []; reduced_b.each {|v| @b << @alphabet.add(v)}
   end
 
   def Diff.algorithm(algorithm)
