@@ -330,6 +330,7 @@ class CVS
 	  })
 	  raise UnexpectedResult.new("unexpected revision added: #{newrev} instead of #{next_rev}") if next_rev != newrev
 	  @head_rev = newrev
+	  @state = 'Exp'
 	  return newrev
 	end
 
@@ -382,6 +383,7 @@ class CVS
 	  })
 	  raise UnexpectedResult.new("unexpected revision removed: #{newrev} instead of #{next_rev}") if next_rev != newrev
 	  @head_rev = newrev
+	  @state = 'dead'
 	  return newrev
 	end
 
