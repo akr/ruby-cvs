@@ -15,7 +15,10 @@ MARK = {
 hunks.each{|line1_beg, line1_len, line2_beg, line2_len, hunk|
   %>@@ -<%=line1_beg%>,<%=line1_len%> +<%=line2_beg%>,<%=line2_len%> @@
 <%hunk.each {|t, line|
-  %><%=MARK[t]%><%=CGI::escapeHTML line%><%
+    %><%=MARK[t]%><%=CGI::escapeHTML line%><%
+    if /\n\z/ !~ line%>
+\ No newline at end of file
+<%  end
   }
 }
 %></pre>

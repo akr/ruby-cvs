@@ -70,7 +70,7 @@ class ReViz
     }
   end
 
-  def url(path_info, extra_params={}, fragment=nil)
+  def params(extra_params={})
     params = @url_params.dup
     if extra_params
       extra_params.each {|k,v|
@@ -84,6 +84,11 @@ class ReViz
     StickyParameter.each {|k,v|
       params.delete(k) if params[k] == v
     }
+    return params
+  end
+
+  def url(path_info, extra_params={}, fragment=nil)
+    ps = params(extra_params)
 
     result = @url_base.dup
     if path_info
@@ -96,15 +101,28 @@ class ReViz
 	result << '/' << path_info
       end
     end
-    unless params.empty?
-      result << '?' << params.keys.sort.collect {|k|
-                         "#{k}=#{CGI::escape(params[k])}"
+    unless ps.empty?
+      result << '?' << ps.keys.sort.collect {|k|
+                         "#{k}=#{CGI::escape(ps[k])}"
 		       }.join('&')
     end
     if fragment != nil
       result << '#' << fragment
     end
     return result
+  end
+
+  def only_with_tag
+    if @cgi.has_key? 'only_with_tag'
+      tag = @cgi['only_with_tag'][0]
+      if /\A[A-Za-z][A-Za-z0-9\-_]*\z/ =~ tag
+        return tag
+      else
+        return nil
+      end
+    else
+      return nil
+    end
   end
 
   def main
@@ -348,7 +366,7 @@ class ReViz
   end
 
   def view_directory
-    filter_gen = lambda { RevFilter.create(@cgi['only_with_tag'][0]) }
+    filter_gen = lambda { RevFilter.create(only_with_tag) }
     opts = filter_gen.call.parse_log_opts_one
 
     dirtags = {}
@@ -393,7 +411,8 @@ class ReViz
 	:vendor_tags => vendor_tags,
 	:branch_tags => branch_tags,
 	:nonbranch_tags => nonbranch_tags,
-	:special_tags => special_tags
+	:special_tags => special_tags,
+	:params => params('only_with_tag'=>nil)
       ]).gen
   end
   class ViewDirectoryVisitor < CVS::Visitor
