@@ -89,6 +89,9 @@ class CVS
   end
 
   class F # file
+    def path
+      return self.dir.path + '/' + self.name
+    end
   end
 
   class Attr

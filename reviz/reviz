@@ -5,10 +5,37 @@
 require 'cvs'
 require 'cgi'
 
+class SBuf
+  def initialize
+    @bufs = []
+    @buf = []
+  end
+
+  def <<(string)
+    @buf << string
+    if 4096 <= @buf.length
+      buf = @buf.slice!(0, @buf.length).join
+      if i = @bufs.rindex(nil)
+        @bufs[i] = @bufs[i+1..-1].join + buf
+	@bufs.fill(nil, (i+1)..-1)
+      else
+        @bufs.unshift(@bufs.join + buf)
+	@bufs.fill(nil, 1..-1)
+      end
+      #STDERR.print @bufs.collect {|s| s && s.length}.inspect, "\n"
+    end
+  end
+
+  def each
+    @bufs.each {|s| yield s if s}
+    yield @buf.join
+  end
+end
+
 class CGIBuffer
   def initialize(cgi)
     @cgi = cgi
-    @buf = []
+    @buf = SBuf.new
     @options = {'type' => 'text/html'}
   end
 
@@ -21,7 +48,7 @@ class CGIBuffer
   end
 
   def print(*ss)
-    @buf.concat(ss)
+    ss.each {|s| @buf << s}
   end
 
   def catch
@@ -47,16 +74,25 @@ class CGIBuffer
     print "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">\n"
   end
 
-  def element(tag, attr={})
+  def elt(tag, attr={})
     print "<#{tag}"
     attr.each {|k, v|
       print " #{k}=\"#{CGI::escapeHTML(v)}\""
     }
-    print " /" unless block_given?
-    print ">"
-    yield if block_given?
-    print "</#{tag}>\n" if block_given?
+    if block_given?
+      print ">"
+      yield
+      print "</#{tag}>"
+    else
+      print " />"
+    end
   end
+
+  def element(tag, attr={}, &block)
+    elt(tag, attr, &block)
+    print "\n"
+  end
+
 end
 
 class RepBrowse
@@ -125,15 +161,17 @@ class RepBrowse
     }
   end
 
-  def url(path_info, params_diff={})
+  def url(path_info, extra_params={}, fragment=nil)
     params = @url_params.dup
-    params_diff.each {|k,v|
-      if v == nil
-        params.delete(k)
-      else
-        params[k] = v
-      end
-    }
+    if extra_params
+      extra_params.each {|k,v|
+	if v == nil
+	  params.delete(k)
+	else
+	  params[k] = v
+	end
+      }
+    end
     StickyParameter.each {|k,v|
       params.delete(k) if params[k] == v
     }
@@ -147,6 +185,9 @@ class RepBrowse
                          "#{k}=#{CGI::escape(params[k])}"
 		       }.join('&')
     end
+    if fragment != nil
+      result << '#' << fragment
+    end
     return result
   end
 
@@ -156,40 +197,34 @@ class RepBrowse
       init_url
 
       if @cvsfile
-	view_log
+	if @cgi.has_key? 'rev'
+	  view_checkout(CVS::Revision.create(@cgi['rev']))
+	else
+	  view_log
+	end
       else
 	view_directory
       end
     }
   end
 
-  class ViewLogVisitor < CVS::Visitor
-    def initialize(cgibuffer)
-      @cgibuffer = cgibuffer
-    end
-
-    def delta_rlog(rev, locked_by, date, author, state, add, del, branches,
-                   message)
-      @cgibuffer.element('dt') {@cgibuffer.print rev.to_s}
-      @cgibuffer.element('dd') {
-	@cgibuffer.print CGI::escapeHTML(
-	  [date, author, state, add, del, branches.collect {|r| r.to_s},
-	   message].inspect), "\n"
-      }
-    end
-  end
-
-  def view_log
+  def list_repository
     @cgibuffer.dtd
     @cgibuffer.element('html') {
       @cgibuffer.element('head') {
 	@cgibuffer.element('title') {
-	  @cgibuffer.print 'file'
+	  @cgibuffer.print 'repository list'
 	}
       }
       @cgibuffer.element('body') {
-	@cgibuffer.element('dl') {
-	  @cvsfile.parse_log(ViewLogVisitor.new(@cgibuffer))
+	@cgibuffer.element('ul') {
+	  CVSROOT_LIST.each {|name, *rest|
+	    @cgibuffer.element('li') {
+	      @cgibuffer.element('a', {'href'=>url(nil, {'cvsroot'=>name})}) {
+		@cgibuffer.print name
+	      }
+	    }
+	  }
 	}
       }
     }
@@ -225,8 +260,8 @@ class RepBrowse
 	    listfile.each {|file|
 	      @cgibuffer.element('li') {
 		@cgibuffer.element('a',
-		  {'href'=>url(file.dir.path + '/' + file.name)}) {
-		  @cgibuffer.print file.dir.path + '/' + file.name
+		  {'href'=>url(file.path)}) {
+		  @cgibuffer.print file.path
 		}
 	      }
 	    }
@@ -236,22 +271,80 @@ class RepBrowse
     }
   end
 
-  def list_repository
+  def view_log
     @cgibuffer.dtd
     @cgibuffer.element('html') {
       @cgibuffer.element('head') {
 	@cgibuffer.element('title') {
-	  @cgibuffer.print 'repository list'
+	  @cgibuffer.print 'file'
 	}
       }
       @cgibuffer.element('body') {
-	@cgibuffer.element('ul') {
-	  CVSROOT_LIST.each {|name, *rest|
-	    @cgibuffer.element('li') {
-	      @cgibuffer.element('a', {'href'=>url(nil, {'cvsroot'=>name})}) {
-		@cgibuffer.print name
-	      }
-	    }
+	@cvsfile.parse_log(ViewLogVisitor.new {|args|
+	  print_log(*args)
+	  @cgibuffer.element('hr')
+	})
+      }
+    }
+  end
+  class ViewLogVisitor < CVS::Visitor
+    def initialize(&block)
+      @block = block
+      @rev2sym = {}
+      @rev2sym.default = [].freeze
+    end
+    def symbol(sym, rev)
+      unless @rev2sym.has_key? rev
+        @rev2sym[rev] = []
+      end
+      @rev2sym[rev] << sym
+    end
+    def delta_rlog(rev, locked_by, date, author, state,
+                   add, del, branches, message)
+      #p [rev, locked_by, date, author, state, add, del, branches, message]
+      @block.call(rev, locked_by, date, author, state,
+                  add, del, branches, message, @rev2sym[rev])
+    end
+  end
+
+  def print_log(rev, locked_by, date, author, state,
+                add, del, branches, message, tags)
+
+    @cgibuffer.element('p') {
+      tags.each {|tag| @cgibuffer.element('a', {'name'=>tag}) {}}
+      @cgibuffer.element('a', {'name'=>"rev#{rev.to_s}"}) {}
+      @cgibuffer.print 'Revision '
+      @cgibuffer.elt('b') {
+	@cgibuffer.elt('a',
+	  {'href'=>url(@cvsfile.path, {'rev'=>rev.to_s})}) {
+	  @cgibuffer.print rev.to_s
+	}
+      }
+      @cgibuffer.print ', '
+      @cgibuffer.element('i') {@cgibuffer.print CGI::escapeHTML(date.to_s)}
+      @cgibuffer.print ' by '
+      @cgibuffer.element('i') {@cgibuffer.print CGI::escapeHTML(author)}
+    }
+    @cgibuffer.element('pre') {@cgibuffer.print CGI::escapeHTML(message)}
+  end
+
+  def view_checkout(rev)
+    @cgibuffer.dtd
+    @cgibuffer.element('html') {
+      @cgibuffer.element('head') {
+	@cgibuffer.element('title') {
+	  @cgibuffer.print 'checkout'
+	}
+      }
+      @cgibuffer.element('body') {
+	@cvsfile.parse_log(ViewLogVisitor.new {|args|
+	  print_log(*args)
+	}, ["-r#{rev.to_s}"])
+	@cvsfile.checkout(rev) {|f, a|
+	  @cgibuffer.element('p') {@cgibuffer.print CGI::escapeHTML(a.inspect)}
+	  @cgibuffer.element('hr')
+	  @cgibuffer.element('pre') {
+	    @cgibuffer.print CGI::escapeHTML(f.read)
 	  }
 	}
       }
