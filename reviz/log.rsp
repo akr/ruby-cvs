@@ -6,8 +6,9 @@
 %>Revision <b><a href="<%=CGI::escapeHTML checkout_url%>"><%=rev%></a></b> /
 <a href="<%=CGI::escapeHTML annotate_url%>">annotate</a>,
 <i><%=CGI::escapeHTML date.to_s%></i> by <i><%=CGI::escapeHTML author%></i><br>
-CVS Tags<%pre = ': '
+<%unless tagged_urls.empty?
+%>CVS Tags<%pre = ': '
 tagged_urls.each {|tag, url|
-%><%=pre%><b><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML tag%></a></b><%pre = ", \n"}%>
+%><%=pre%><b><a href="<%=CGI::escapeHTML url%>"><%=CGI::escapeHTML tag%></a></b><%pre = ", \n"}%><%end%>
 </p>
 <pre><%=CGI::escapeHTML message%></pre>
