@@ -103,7 +103,7 @@ class CVS
         run_cvs(['update', '-r00', '-d', '-p'], '/dev/null', w, [], nil, lambda {
 	  w.close
 	  while line = r.gets
-	    if / server: New directory `(.*)' -- ignored\n\z/
+	    if / server: New directory `(.*)' -- ignored\n\z/ =~ line
 	      res << dir($1)
 	    end
 	  end
@@ -121,7 +121,7 @@ class CVS
 	  w.close
 	  res = []
 	  while line = r.gets
-	    if /\/(Attic\/)?([^\/]*),v\n\z/
+	    if /\/(Attic\/)?([^\/]*),v\n\z/ =~ line
 	      res << file($2, $1 != nil)
 	    end
 	  end

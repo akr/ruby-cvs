@@ -708,6 +708,13 @@ class CVS
 	  @visitor.send(msg_id, *args)
 	end
 
+	def rcsfile(path)
+	  @visitor.rcsfile(path)
+	  if /\/(Attic\/)?([^\/]*),v\z/ =~ path
+	    @visitor.rcsfile_splitted($`, $2, $1 != nil)
+	  end
+	end
+
 	def head(rev)
 	  rev = Revision.create(rev)
 	  @visitor.head(rev)
