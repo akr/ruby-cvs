@@ -307,40 +307,53 @@ class CVS
         super(dir, name, attic)
       end
 
+      def adjust_attic(attic=nil)
+        if attic != nil
+	  @attic = attic
+	else
+	  rcs_pathname
+	end
+	return @attic
+      end
+
       def rcs_pathname(attic=nil)
 	prefix = @dir.cvsroot.cvsroot + '/' + @dir.path + '/'
 	suffix = @name + ',v'
 
 	if attic != nil
 	  return prefix + (attic ?  'Attic/' : '') + suffix
-	elsif FileTest.exist? (prefix + suffix)
-	  return prefix + suffix
-	elsif FileTest.exist? (prefix + 'Attic/' + suffix)
-	  return prefix + 'Attic/' + suffix
+	elsif FileTest.exist? (result_without_attic = prefix + suffix)
+	  @attic = false
+	  return result_without_attic
+	elsif FileTest.exist? (result_with_attic = prefix + 'Attic/' + suffix)
+	  @attic = true
+	  return result_with_attic
 	else
-	  return prefix + (@attic ?  'Attic/' : '') + suffix
+	  return @attic ? result_with_attic : result_without_attic
 	end
       end
 
       def parse_raw_log(visitor, opts=[])
-	@dir.with_work {|t|
-	  r, w = IO.pipe
-	  pid = fork {
-	    STDOUT.reopen(w)
-	    open('/dev/null', 'w') {|f| STDERR.reopen(f)}
-	    r.close
+	@dir.read_lock {
+	  @dir.with_work {|t|
+	    r, w = IO.pipe
+	    pid = fork {
+	      STDOUT.reopen(w)
+	      open('/dev/null', 'w') {|f| STDERR.reopen(f)}
+	      r.close
+	      w.close
+	      Dir.chdir(t.path)
+	      command = ['rlog']
+	      command += opts
+	      command << rcs_pathname
+	      exec *command
+	    }
 	    w.close
-	    Dir.chdir(t.path)
-	    command = ['rlog']
-	    command += opts
-	    command << rcs_pathname
-	    exec *command
+	    res = Parser::Log.new(r).parse(visitor)
+	    r.close
+	    Process.waitpid(pid, 0)
+	    return res
 	  }
-	  w.close
-	  res = Parser::Log.new(r).parse(visitor)
-	  r.close
-	  Process.waitpid(pid, 0)
-	  return res
 	}
       end
 
@@ -349,21 +362,25 @@ class CVS
       end
 
       def parse_raw_rcs(visitor)
-        open(rcs_pathname) {|r|
-	  Parser::RCS.new(r).parse(visitor)
+	@dir.read_lock {
+	  open(rcs_pathname) {|r|
+	    Parser::RCS.new(r).parse(visitor)
+	  }
 	}
       end
 
       def mode
-	s = File.stat(rcs_pathname)
-	modes = ['', 'x', 'w', 'wx', 'r', 'rx', 'rw', 'rwx']
-	m = s.mode & 0555 
-	# Since RCS files doesn't record a `write' permission,
-	# we assume it is identical to the corresponding `read' permission.
-	m |= (s.mode & 0444) >> 1
-	return 'u=' + modes[(m & 0700) >> 6] +
-	      ',g=' + modes[(m & 0070) >> 3] +
-	      ',o=' + modes[(m & 0007)]
+	@dir.read_lock {
+	  s = File.stat(rcs_pathname)
+	  modes = ['', 'x', 'w', 'wx', 'r', 'rx', 'rw', 'rwx']
+	  m = s.mode & 0555 
+	  # Since RCS files doesn't record a `write' permission,
+	  # we assume it is identical to the corresponding `read' permission.
+	  m |= (s.mode & 0444) >> 1
+	  return 'u=' + modes[(m & 0700) >> 6] +
+		',g=' + modes[(m & 0070) >> 3] +
+		',o=' + modes[(m & 0007)]
+        }
       end
 
       def checkout_ext(rev) # deplicated.
@@ -709,11 +726,12 @@ class CVS
 
 	def run_ci(contents, log, desc, state, author, date)
 	  @work = TempDir.create unless @work
-	  rcsfile = @file.rcs_pathname
-	  basename = File.basename(rcsfile, ',v')
+	  basename = @file.name
 	  @work.open(basename, 'w') {|f| f.print contents}
 
 	  @file.dir.write_lock {
+	    rcsfile = @file.rcs_pathname
+
 	    unless @branch_tag && @branch_rev.origin == @head_rev
 	      rcs_lock @head_rev
 	    end
@@ -735,6 +753,19 @@ class CVS
 	    }
 	    Process.waitpid(pid, 0)
 	    raise CheckInCommandFailure.new($?) if $? != 0
+
+	    if @branch_tag == nil && @head_rev.on_trunk?
+	      attic = state == 'dead'
+	      newrcsfile = @file.rcs_pathname(attic)
+	      if newrcsfile != rcsfile
+		dir = @file.dir.cvsroot.cvsroot + '/' + @file.dir.path
+	        if attic && ! FileTest.directory?(dir + '/Attic')
+		  Dir.mkdir(dir + '/Attic', 0775)
+		end
+		File.rename(rcsfile, newrcsfile)
+		@file.adjust_attic(attic)
+	      end
+	    end
 	  }
 	end
 	class CheckInCommandFailure < StandardError
@@ -748,10 +779,7 @@ class CVS
 =end
         def add(contents, log, author=nil, date=nil)
 	  raise AlreadyExist.new("already exist: #{@file.inspect}:#{@head_rev}") if @state != 'dead'
-	  run_ci(contents, log, '', 'Exp', author, date)
-	  @state = 'Exp'
-	  # xxx: move file from attic if properly.
-	  return @head_rev = next_rev
+	  return mkrev(contents, log, author, date, 'Exp')
 	end
 
 =begin
@@ -759,8 +787,7 @@ class CVS
 =end
 	def checkin(contents, log, author=nil, date=nil)
 	  raise NotExist.new("not exist: #{@file.inspect}:#{@head_rev}") if @state == 'dead'
-	  run_ci(contents, log, '', 'Exp', author, date)
-	  return @head_rev = next_rev
+	  return mkrev(contents, log, author, date, 'Exp')
 	end
 
 =begin
@@ -769,10 +796,15 @@ class CVS
 	def remove(log, author=nil, date=nil)
 	  raise NotExist.new("not exist: #{@file.inspect}:#{@head_rev}") if @state == 'dead'
 	  contents = @file.checkout(@head_rev) {|c, a| c}
-	  run_ci(contents, log, '', 'dead', author, date)
-	  @state = 'dead'
-	  # xxx: move file into attic if properly.
-	  return @head_rev = next_rev
+	  return mkrev(contents, log, author, date, 'dead')
+	end
+
+	def mkrev(contents, log, author=nil, date=nil, state=nil)
+	  state = 'Exp' if state == nil
+	  run_ci(contents, log, '', state, author, date)
+	  @head_rev = next_rev
+	  @state = state
+	  return @head_rev
 	end
       end
     end
