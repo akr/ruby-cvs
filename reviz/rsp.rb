@@ -100,11 +100,11 @@ class RSP
   end
 
   def RSP.load(filename)
-    return eval compile_file(filename)
+    return eval(compile_file(filename))
   end
 
   def RSP.load_source(filename)
-    return eval compile_code(filename)
+    return eval(compile_code(filename))
   end
 
   def RSP.compile_code(filename)
