@@ -100,7 +100,7 @@ class Diff
       v = a[i]
       if hash_b.include? v
 	reduced_a << v
-	@revert_index_a << i
+	@revert_index_a << @prefix.length + i
       end
     }
 
@@ -108,7 +108,7 @@ class Diff
       v = b[i]
       if hash_a.include? v
 	reduced_b << v
-	@revert_index_b << i
+	@revert_index_b << @prefix.length + i
       end
     }
 
