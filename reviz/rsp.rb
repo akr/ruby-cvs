@@ -84,17 +84,19 @@ class RSP
   def RSP.check_code(code)
     err = Thread.start {
       $SAFE=4
-      loop {
-	begin
-	  eval("BEGIN {break}; #{code}")
-	rescue SyntaxError
-	  break $!
-	end
-	break
-      }
+      code_invalid?(code)
     }.value
 
     raise err if err
+  end
+
+  def RSP.code_invalid?(code)
+    begin
+      eval("BEGIN {return false}; #{code}")
+    rescue SyntaxError
+      return $!
+    end
+    return StandardError.new("invalid code")
   end
 
   def RSP.load(filename)
