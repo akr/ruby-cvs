@@ -253,10 +253,7 @@ class CVS
       end
 
       def read_lock
-	if @cvsroot.readonly
-	  yield
-	  return
-	end
+	return yield if @cvsroot.readonly
 
 	if @lockstate != :unlock
 	  yield
