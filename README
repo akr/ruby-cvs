@@ -23,6 +23,11 @@ http://cvs.m17n.org/~akr/ruby-cvs/
   http://www.inf.bme.hu/~pts/flex_rb-latest.tar.gz
   (it makes parsing rcs file faster.)
 
+* Samples
+
+  ReViz: ViewCVS like CGI script.  See reviz/*
+  VizTree: Branch Tree Visualizer.  See viztree.
+
 * Author
 
 Tanaka Akira <akr@m17n.org>
