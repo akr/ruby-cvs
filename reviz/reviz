@@ -51,6 +51,10 @@ class CGIBuffer
     ss.each {|s| @buf << s}
   end
 
+  def printf(*ss)
+    print sprintf(*ss)
+  end
+
   def catch
     begin
       yield self
@@ -206,7 +210,9 @@ class ReViz
 
       if @cvsfile
 	if @cgi.has_key? 'rev'
-	  view_checkout(CVS::Revision.create(@cgi['rev']))
+	  view_checkout(CVS::Revision.create(@cgi['rev'][0]))
+	elsif @cgi.has_key? 'annotate'
+	  view_annotate(CVS::Revision.create(@cgi['annotate'][0]))
 	else
 	  view_log
 	end
@@ -316,14 +322,19 @@ class ReViz
                 add, del, branches, message, tags)
 
     @cgibuffer.element('p') {
-      tags.each {|tag| @cgibuffer.element('a', {'name'=>tag}) {}}
       @cgibuffer.element('a', {'name'=>"rev#{rev.to_s}"}) {}
+      tags.each {|tag| @cgibuffer.element('a', {'name'=>tag}) {}}
       @cgibuffer.print 'Revision '
       @cgibuffer.elt('b') {
 	@cgibuffer.elt('a',
 	  {'href'=>url(@cvsfile.path, {'rev'=>rev.to_s})}) {
 	  @cgibuffer.print rev.to_s
 	}
+      }
+      @cgibuffer.print ' / '
+      @cgibuffer.elt('a',
+	{'href'=>url(@cvsfile.path, {'annotate'=>rev.to_s})}) {
+	@cgibuffer.print 'annotate'
       }
       @cgibuffer.print ', '
       @cgibuffer.element('i') {@cgibuffer.print CGI::escapeHTML(date.to_s)}
@@ -349,6 +360,29 @@ class ReViz
 	  @cgibuffer.element('hr')
 	  @cgibuffer.element('pre') {
 	    @cgibuffer.print CGI::escapeHTML(contents)
+	  }
+	}
+      }
+    }
+  end
+
+  def view_annotate(rev)
+    @cgibuffer.xhtml {
+      @cgibuffer.element('head') {
+	@cgibuffer.element('title') {
+	  @cgibuffer.print 'annotate'
+	}
+      }
+      @cgibuffer.element('body') {
+	@cgibuffer.element('pre') {
+	  @cvsfile.fullannotate(rev) {|line, date1, rev1, author, rev2, date2|
+	    #@cgibuffer.printf "%-12s (%-8.8s %s): ", rev1.to_s, author, date1.strftime('%d-%b-%y')
+	    @cgibuffer.printf "%s %-8s %-8.8s %-8s %s): ",
+	      date1.strftime('%Y/%m/%d'), rev1.to_s, author, rev2.to_s, (date2 ? date2.strftime('%Y/%m/%d') : "          ")
+	    @cgibuffer.print CGI::escapeHTML(line)
+	    unless /\n\z/ =~ line
+	      @cgibuffer.print "\nno newline\n"
+	    end
 	  }
 	}
       }
