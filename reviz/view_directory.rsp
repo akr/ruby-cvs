@@ -20,6 +20,11 @@ def age(timestamp)
 end
 %><html>
 <head>
+<%
+  if CSS_URL
+%><link rel="stylesheet" type="text/css" href="<%=CGI.escapeHTML CSS_URL%>"><%
+  end
+%>
 <title>directory</title>
 </head>
 <body>

@@ -5,4 +5,5 @@ class ReViz
   ]
 
   RSP_DIR = '/home/akr/src/ruby/cvs/ruby-cvs/reviz'
+  CSS_URL = nil # '/css/reviz.css'
 end
