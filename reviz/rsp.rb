@@ -39,6 +39,8 @@
 : <%= expression %>
 : <% code fragment %>
 : <%@ include file="..." %>
+: <%%
+: %%>
 
 =end
 
@@ -139,10 +141,14 @@ End
     state = :contents
     linenumber = 1
     line_open = nil
-    template.split(/(<%|%>)/).each {|data|
+    template.split(/(<%%|%%>|<%|%>)/).each {|data|
       case state
       when :contents
 	case data
+        when '<%%'
+	  gen_body << 'buf << ' << " '<%'\n"
+        when '%%>'
+	  gen_body << 'buf << ' << " '%>'\n"
         when '<%'
 	  state = :code
 	  line_open = linenumber
@@ -155,8 +161,10 @@ End
 	end
       when :code
 	case data
-        when '<%'
+        when '<%', '<%%'
 	  raise RSPError.new("#{filename}:#{linenumber}: nested '<%'")
+        when '%%>'
+	  raise RSPError.new("#{filename}:#{linenumber}: code contains '%%>'")
         when '%>'
 	  state = :contents
 	  line_open = nil
